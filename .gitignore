@@ -1,0 +1,54 @@
+# ==========================================
+# Python: Các file cache và biên dịch
+# ==========================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# ==========================================
+# Môi trường ảo (Virtual Environments)
+# ==========================================
+venv/
+.venv/
+env/
+.env/
+Pipfile.lock
+
+# ==========================================
+# Cấu hình IDE / Trình soạn thảo (VSCode, PyCharm)
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+.spyderproject
+.spyproject
+
+# ==========================================
+# File rác hệ thống điều hành (Windows, macOS)
+# ==========================================
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Desktop.ini
+
+# ==========================================
+# File Log và Cấu hình phụ
+# ==========================================
+*.log
+*.sqlite3
+
+# ==========================================
+# Thư mục Testing
+# ==========================================
+.tox/
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
