@@ -2,6 +2,7 @@
 
 import itertools
 from typing import List
+from state import State
 
 class KnowledgeBase:
     def __init__(self, N: int) -> None:
@@ -57,10 +58,52 @@ class KnowledgeBase:
             for c in range(self.N):
                 val = grid[r][c]
                 if val != 0:
-                    # Val(i,j,v)
+                    # Val(i, j, v)
                     self.clauses.append([self.encode_var(r, c, val)])
 
-    def 
+    def generate_horizontal_constraints(self, h_constraints: List[List[int]]) -> None:
+        # Rule 6: Horizontal inequality constraints ∀i∀j ∀v1 ∀v2 LessH(i,j) ∧ Val(i,j,v1) ∧ Val(i,j+1,v2) ⇒ Less(v1,v2)
+        for r in range(self.N):
+            for c in range(self.N - 1):
+                if h_constraints[r][c] == 1:  # Left Cell < Right Cell
+                    for v1 in range(1, self.N + 1):
+                        for v2 in range(1, self.N + 1):
+                            if v1 >= v2:
+                                # (-Val(r, c, v1) V -Val(r, c + 1, v2))
+                                self.clauses.append([-self.encode_var(r, c, v1), -self.encode_var(r, c + 1, v2)])
+                
+                elif h_constraints[r][c] == -1: # Left Cell < Right Cell
+                    for v1 in range(1, self.N + 1):
+                        for v2 in range(1, self.N + 1):
+                            if v1 <= v2:
+                                # (-Val(r, c, v1) V -Val(r, c + 1, v2))
+                                self.clauses.append([-self.encode_var(r, c, v1), -self.encode_var(r, c + 1, v2)])
+
+    def generate_vertical_constraints(self, v_constraints: List[List[int]]) -> None:
+        # Rule 7: Vertical inequality constraints ∀i∀j ∀v1 ∀v2 LessV(i,j) ∧ Val(i, j, v1) ∧ Val(i + 1, j, v2) ⇒ Less(v1, v2)
+        for r in range(self.N - 1):
+            for c in range(self.N):
+                if v_constraints[r][c] == 1:  # Top Cell < Bottom Cell
+                    for v1 in range(1, self.N + 1):
+                        for v2 in range(1, self.N + 1):
+                            if v1 >= v2:
+                                # (-Val(r, c, v1) V -Val(r + 1, c, v2))
+                                self.clauses.append([-self.encode_var(r, c, v1), -self.encode_var(r + 1, c, v2)])
+                
+                elif v_constraints[r][c] == -1: # Ô Trên > Ô Dưới
+                    for v1 in range(1, self.N + 1):
+                        for v2 in range(1, self.N + 1):
+                            if v1 <= v2:
+                                # (-Val(r, c, v1) V -Val(r + 1, c, v2))
+                                self.clauses.append([-self.encode_var(r, c, v1), -self.encode_var(r + 1, c, v2)])
+
+    def generate_all_clauses(self, state: 'State') -> List[List[int]]:
+        self.clauses = []
+        self.generate_base_rules()
+        self.generate_given_clues(state.grid)
+        self.generate_horizontal_constraints(state.h_constraints)
+        self.generate_vertical_constraints(state.v_constraints)
+        return self.clauses
 
     
 
