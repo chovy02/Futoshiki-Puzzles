@@ -1,8 +1,8 @@
 #core/knowledge_base.py
 
 import itertools
-from typing import List
-from state import State
+from typing import List, Tuple
+from core.state import State
 
 class KnowledgeBase:
     def __init__(self, N: int) -> None:
@@ -12,6 +12,15 @@ class KnowledgeBase:
     def encode_var(self, r: int, c: int, value: int) -> int:
         """Encode clause Val(r, c, v) into a unique ID"""
         return r * (self.N * self.N) + c * self.N + value
+    
+    def decode_var(self, ID: int) -> Tuple[int, int, int]:
+        """Decode an ID into tuple(r, c, Value)"""
+        ID -= 1 
+        r = ID // (self.N * self.N)
+        ID %= (self.N * self.N)
+        c = ID // self.N
+        v = (ID % self.N) + 1
+        return r, c, v
 
     def generate_base_rules(self) -> None:
         """
