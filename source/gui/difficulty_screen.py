@@ -80,7 +80,7 @@ class DifficultyCard:
         name_color = th.TEXT_PRIMARY if self.enabled else th.TEXT_DISABLED
         if self.enabled:
             name_color = th.lerp_color(th.TEXT_PRIMARY, self.color, self.hover_t * 0.5)
-        name_font = th.get_font(30, bold=True)
+        name_font = th.get_font(35, bold=True)
         name_surf = name_font.render(self.name, True, name_color)
         name_rect = name_surf.get_rect(center=(rect.w // 2, 175))
         temp.blit(name_surf, name_rect)
@@ -162,13 +162,13 @@ class DifficultyScreen:
         title_alpha = int(255 * title_appear)
         title_offset = int((1 - title_appear) * 18)
 
-        label_font = th.get_font(13, bold=True)
+        label_font = th.get_font(20, bold=True)
         label_surf = label_font.render(f"SIZE: {self.size_name}", True, th.ACCENT)
         label_surf.set_alpha(title_alpha)
         label_rect = label_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 130 - title_offset))
         surface.blit(label_surf, label_rect)
 
-        title_font = th.get_font(56, bold=True)
+        title_font = th.get_font(40, bold=True)
         title_surf = title_font.render("Select Difficulty", True, th.TEXT_PRIMARY)
         title_surf.set_alpha(title_alpha)
         title_rect = title_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 180 - title_offset))

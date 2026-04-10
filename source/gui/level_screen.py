@@ -132,7 +132,7 @@ class LevelScreen:
             x = start_x + i * (card_w + gap)
             y = start_y
             path = os.path.join(inputs_dir, f"input-{real_lvl:02d}.txt")
-            enabled = os.path.isfile(path)
+            enabled = os.path.isfile(path) and os.path.getsize(path) > 0
             
             # CHỈNH SỬA Ở ĐÂY: Luôn đánh số bắt đầu từ 1, 2, 3... cho mỗi độ khó
             display_lvl = i + 1
