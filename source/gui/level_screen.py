@@ -133,13 +133,17 @@ class LevelScreen:
         start_y = (th.WINDOW_HEIGHT - card_h) // 2 + 30
 
         self.cards = []
-        for i, lvl in enumerate(range(start_level, end_level + 1)):
+        for i, real_lvl in enumerate(range(start_level, end_level + 1)):
             x = start_x + i * (card_w + gap)
             y = start_y
-            path = os.path.join(inputs_dir, f"input-{lvl:02d}.txt")
+            path = os.path.join(inputs_dir, f"input-{real_lvl:02d}.txt")
             enabled = os.path.isfile(path)
-            card = LevelCard((x, y, card_w, card_h), lvl, self.info["color"],
-                             (lambda p=path, l=lvl: self._open(l, p)), enabled=enabled)
+            
+            # CHỈNH SỬA Ở ĐÂY: Luôn đánh số bắt đầu từ 1, 2, 3... cho mỗi độ khó
+            display_lvl = i + 1
+            
+            card = LevelCard((x, y, card_w, card_h), display_lvl, self.info["color"],
+                             (lambda p=path, l=display_lvl: self._open(l, p)), enabled=enabled)
             card.appear_delay = 0.08 + i * 0.05
             self.cards.append(card)
 
