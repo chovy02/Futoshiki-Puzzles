@@ -87,3 +87,58 @@ class State:
 
         print("-" * 20)
 
+    # =====
+    # PREDICATE
+    # =====
+
+    def is_valid_assignment(self, r: int, c: int, v: int) -> bool:
+        """Check whether an assignment is valid."""
+        return (self.is_valid_row(r, v) and 
+                self.is_valid_col(c, v) and 
+                self.is_valid_h_constraints(r, c, v) and 
+                self.is_valid_v_constraints(r, c, v))
+    
+    def is_valid_row(self, r: int, v: int) -> bool:
+        """Check whether value v has already been assigned to row r"""
+        for c in range(self.N):
+            if self.grid[r][c] == v: return False
+        return True
+    
+    def is_valid_col(self, c: int, v: int) -> bool:
+        """Check whether value v has already been assigned to column c"""
+        for r in range(self.N):
+            if self.grid[r][c] == v: return False
+        return True
+    
+    def is_valid_h_constraints(self, r: int, c: int, v: int) -> bool:
+        """Check whether an assignment satisfies left and right constraints"""
+        # Check left
+        if c > 0 and self.grid[r][c - 1] != 0:
+            left_v = self.grid[r][c - 1]
+            rule = self.h_constraints[r][c - 1]
+            if rule == 1 and not (left_v < v): return False
+            if rule == -1 and not (left_v > v): return False
+        # Check right
+        if c < self.N - 1 and self.grid[r][c + 1] != 0:
+            right_v = self.grid[r][c + 1]
+            rule = self.h_constraints[r][c]
+            if rule == 1 and not (v < right_v): return False
+            if rule == -1 and not (v > right_v): return False
+        return True
+    
+    def is_valid_v_constraints(self, r: int, c: int, v: int) -> bool:
+        """Check whether an assignment satisfies top and bottom constraints"""
+        # Check top
+        if r > 0 and self.grid[r - 1][c] != 0:
+            top_v = self.grid[r - 1][c]
+            rule = self.v_constraints[r - 1][c]
+            if rule == 1 and not (top_v < v): return False
+            if rule == -1 and not (top_v > v): return False
+        # Check bottom
+        if r < self.N - 1 and self.grid[r + 1][c] != 0:
+            bottom_v = self.grid[r + 1][c]
+            rule = self.v_constraints[r][c]
+            if rule == 1 and not (v < bottom_v): return False
+            if rule == -1 and not (v > bottom_v): return False
+        return True
+
