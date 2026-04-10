@@ -6,7 +6,6 @@ from .widgets import Button, draw_dotted_bg
 from utils.file_io import read_input_file
 from solvers.forward_chaining import ForwardChainingSolver
 
-
 def find_outputs_dir():
     here = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -22,8 +21,9 @@ def find_outputs_dir():
 
 
 class GameScreen:
-    def __init__(self, app, difficulty, level, input_path):
+    def __init__(self, app, size_name, difficulty, level, input_path):
         self.app = app
+        self.size_name = size_name
         self.difficulty = difficulty
         self.level = level
         self.input_path = input_path
@@ -99,10 +99,7 @@ class GameScreen:
         y = self.board_y + r * (self.cell_size + self.sign_size)
         return pygame.Rect(x, y, self.cell_size, self.cell_size)
 
-    # ----- Solver actions -----
-
     def _ensure_steps(self):
-        """Run the solver if we haven't yet, populate self.steps."""
         if self.steps:
             return True
         self.solver = ForwardChainingSolver(self.original_state)
@@ -119,7 +116,6 @@ class GameScreen:
     def _solve(self):
         if not self._ensure_steps():
             return
-        # Jump immediately to fully solved
         self.step_idx = len(self.steps)
         self._rebuild_state_from_steps()
         if self.steps:
@@ -224,13 +220,11 @@ class GameScreen:
 
     def _go_back(self):
         from .level_screen import LevelScreen
-        self.app.transition_to(LevelScreen(self.app, self.difficulty))
+        self.app.transition_to(LevelScreen(self.app, self.size_name, self.difficulty))
 
     def _go_to_menu(self):
-        from .difficulty_screen import DifficultyScreen
-        self.app.transition_to(DifficultyScreen(self.app))
-
-    # ----- Loop -----
+        from .size_screen import SizeScreen
+        self.app.transition_to(SizeScreen(self.app))
 
     def handle_event(self, event):
         for btn in self.buttons:
@@ -262,15 +256,12 @@ class GameScreen:
                     self.status_msg = f"Solved in {self.solve_time * 1000:.1f} ms"
                     self.status_color = th.SUCCESS
 
-    # ----- Draw -----
-
     def draw(self, surface):
         surface.fill(th.BG_PRIMARY)
         draw_dotted_bg(surface, alpha=8)
 
         self._draw_header(surface)
 
-        # Board container
         board_bg = self.board_area.inflate(20, 20)
         pygame.draw.rect(surface, th.BG_SECONDARY, board_bg, border_radius=18)
         pygame.draw.rect(surface, th.BORDER, board_bg, width=1, border_radius=18)
@@ -288,7 +279,7 @@ class GameScreen:
         alpha = int(255 * title_appear)
         offset = int((1 - title_appear) * 10)
 
-        pill_text = info["name"].upper()
+        pill_text = f"{self.size_name} - {info['name'].upper()}"
         pill_font = th.get_font(12, bold=True)
         pill_surf = pill_font.render(pill_text, True, info["color"])
         pill_w = pill_surf.get_width() + 22
@@ -390,7 +381,6 @@ class GameScreen:
 
         y = rect.y + 22
 
-        # Section: Algorithm
         sec = font_section.render("ALGORITHM", True, th.TEXT_TERTIARY)
         surface.blit(sec, (rect.x + 22, y))
         y += 20
@@ -404,7 +394,6 @@ class GameScreen:
         surface.blit(algo_surf, (algo_rect.x + 16,
                                  algo_rect.centery - algo_surf.get_height() // 2))
 
-        # "Active" badge on the right
         badge_font = th.get_font(10, bold=True)
         badge_surf = badge_font.render("ACTIVE", True, th.ACCENT)
         bw = badge_surf.get_width() + 14
@@ -421,7 +410,6 @@ class GameScreen:
 
         y = algo_rect.bottom + 22
 
-        # Section: Stats (4 cards, 2x2)
         sec = font_section.render("STATISTICS", True, th.TEXT_TERTIARY)
         surface.blit(sec, (rect.x + 22, y))
         y += 20
@@ -453,7 +441,6 @@ class GameScreen:
         draw_stat(rect.x + 20 + stat_w + 10, y, "FILLED", f"{cells_filled}/{total}")
         y += stat_h + 18
 
-        # Section: Current step
         sec = font_section.render("CURRENT STEP", True, th.TEXT_TERTIARY)
         surface.blit(sec, (rect.x + 22, y))
         y += 20
@@ -474,7 +461,6 @@ class GameScreen:
                                  step_rect.centery - step_surf.get_height() // 2))
         y = step_rect.bottom + 14
 
-        # Section: Output info / status
         if self.is_solved:
             mono = th.get_mono(11)
             label_surf = font_section.render("AUTO SAVED", True, th.TEXT_TERTIARY)

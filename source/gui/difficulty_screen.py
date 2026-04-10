@@ -1,7 +1,7 @@
 """Difficulty selection screen - 4 cards (Easy/Medium/Hard/Extreme)."""
 import pygame
 from . import theme as th
-from .widgets import draw_dotted_bg
+from .widgets import Button, draw_dotted_bg
 
 
 class DifficultyCard:
@@ -59,14 +59,12 @@ class DifficultyCard:
         pygame.draw.rect(temp, bg_color, temp_rect, border_radius=18)
         pygame.draw.rect(temp, border_color, temp_rect, width=border_width, border_radius=18)
 
-        # Top accent stripe that grows on hover
         if self.enabled and self.hover_t > 0.05:
             stripe_h = 4
             stripe = pygame.Surface((rect.w - 8, stripe_h), pygame.SRCALPHA)
             stripe.fill((*self.color, int(200 * self.hover_t)))
             temp.blit(stripe, (4, 4))
 
-        # Big circular badge
         badge_radius = 38
         badge_center = (rect.w // 2, 95)
         if self.enabled:
@@ -78,7 +76,6 @@ class DifficultyCard:
             pygame.draw.circle(temp, th.BG_TERTIARY, badge_center, badge_radius)
             pygame.draw.circle(temp, th.BORDER, badge_center, badge_radius, width=1)
 
-        # First letter inside the badge
         badge_font = th.get_font(36, bold=True)
         letter = self.name[0]
         letter_color = self.color if self.enabled else th.TEXT_DISABLED
@@ -86,7 +83,6 @@ class DifficultyCard:
         letter_rect = letter_surf.get_rect(center=badge_center)
         temp.blit(letter_surf, letter_rect)
 
-        # Name
         name_color = th.TEXT_PRIMARY if self.enabled else th.TEXT_DISABLED
         if self.enabled:
             name_color = th.lerp_color(th.TEXT_PRIMARY, self.color, self.hover_t * 0.5)
@@ -95,7 +91,6 @@ class DifficultyCard:
         name_rect = name_surf.get_rect(center=(rect.w // 2, 175))
         temp.blit(name_surf, name_rect)
 
-        # Range
         range_color = th.TEXT_TERTIARY if self.enabled else th.TEXT_DISABLED
         range_font = th.get_font(13)
         range_surf = range_font.render(self.range_text, True, range_color)
@@ -114,8 +109,9 @@ class DifficultyCard:
 
 
 class DifficultyScreen:
-    def __init__(self, app):
+    def __init__(self, app, size_name):
         self.app = app
+        self.size_name = size_name
         self.title_t = 0.0
 
         card_w = 230
@@ -128,31 +124,39 @@ class DifficultyScreen:
 
         self.cards = [
             DifficultyCard((start_x + 0 * (card_w + gap), y, card_w, card_h),
-                           "Easy", "Levels 1 – 9", th.EASY,
+                           "Easy", "2 Levels", th.EASY,
                            lambda: self._open("easy"), enabled=True),
             DifficultyCard((start_x + 1 * (card_w + gap), y, card_w, card_h),
-                           "Medium", "Levels 10 – 18", th.MEDIUM,
-                           lambda: self._open("medium"), enabled=False),
+                           "Medium", "3 Levels", th.MEDIUM,
+                           lambda: self._open("medium"), enabled=True),
             DifficultyCard((start_x + 2 * (card_w + gap), y, card_w, card_h),
-                           "Hard", "Levels 19 – 27", th.HARD,
-                           lambda: self._open("hard"), enabled=False),
+                           "Hard", "2 Levels", th.HARD,
+                           lambda: self._open("hard"), enabled=True),
             DifficultyCard((start_x + 3 * (card_w + gap), y, card_w, card_h),
-                           "Extreme", "Levels 28 – 36", th.EXTREME,
-                           lambda: self._open("extreme"), enabled=False),
+                           "Extreme", "2 Levels", th.EXTREME,
+                           lambda: self._open("extreme"), enabled=True),
         ]
         for i, card in enumerate(self.cards):
             card.appear_delay = 0.15 + i * 0.09
+            
+        self.back_btn = Button((40, 32, 110, 38), "← Back", self._go_back, font_size=14)
 
     def _open(self, difficulty):
         from .level_screen import LevelScreen
-        self.app.transition_to(LevelScreen(self.app, difficulty))
+        self.app.transition_to(LevelScreen(self.app, self.size_name, difficulty))
+        
+    def _go_back(self):
+        from .size_screen import SizeScreen
+        self.app.transition_to(SizeScreen(self.app))
 
     def handle_event(self, event):
+        self.back_btn.handle_event(event)
         for card in self.cards:
             card.handle_event(event)
 
     def update(self, dt, mouse_pos):
         self.title_t = min(1.0, self.title_t + dt * 2)
+        self.back_btn.update(dt, mouse_pos)
         for card in self.cards:
             card.update(dt, mouse_pos)
 
@@ -164,15 +168,14 @@ class DifficultyScreen:
         title_alpha = int(255 * title_appear)
         title_offset = int((1 - title_appear) * 18)
 
-        # Small label above the title
         label_font = th.get_font(13, bold=True)
-        label_surf = label_font.render("CSC14003 · PROJECT 2", True, th.ACCENT)
+        label_surf = label_font.render(f"SIZE: {self.size_name}", True, th.ACCENT)
         label_surf.set_alpha(title_alpha)
         label_rect = label_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 130 - title_offset))
         surface.blit(label_surf, label_rect)
 
         title_font = th.get_font(56, bold=True)
-        title_surf = title_font.render("Futoshiki Solver", True, th.TEXT_PRIMARY)
+        title_surf = title_font.render("Select Difficulty", True, th.TEXT_PRIMARY)
         title_surf.set_alpha(title_alpha)
         title_rect = title_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 180 - title_offset))
         surface.blit(title_surf, title_rect)
@@ -183,18 +186,7 @@ class DifficultyScreen:
             line_rect.center = (th.WINDOW_WIDTH // 2, 220 - title_offset)
             pygame.draw.rect(surface, th.ACCENT, line_rect, border_radius=2)
 
-        subtitle_font = th.get_font(17)
-        subtitle_surf = subtitle_font.render("Choose a difficulty to begin", True, th.TEXT_SECONDARY)
-        subtitle_surf.set_alpha(title_alpha)
-        subtitle_rect = subtitle_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 248 - title_offset))
-        surface.blit(subtitle_surf, subtitle_rect)
-
         for card in self.cards:
             card.draw(surface)
-
-        # Footer hint
-        hint_font = th.get_font(12)
-        hint_surf = hint_font.render("Press ESC to exit", True, th.TEXT_TERTIARY)
-        hint_surf.set_alpha(title_alpha)
-        hint_rect = hint_surf.get_rect(center=(th.WINDOW_WIDTH // 2, th.WINDOW_HEIGHT - 30))
-        surface.blit(hint_surf, hint_rect)
+            
+        self.back_btn.draw(surface)
