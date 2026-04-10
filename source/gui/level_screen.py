@@ -85,11 +85,6 @@ class LevelCard:
         pygame.draw.rect(temp, bg, tr, border_radius=14)
         pygame.draw.rect(temp, border, tr, width=bw, border_radius=14)
 
-        if self.enabled and self.hover_t > 0.05:
-            stripe = pygame.Surface((rect.w - 8, 3), pygame.SRCALPHA)
-            stripe.fill((*self.color, int(200 * self.hover_t)))
-            temp.blit(stripe, (4, 4))
-
         num_color = th.TEXT_PRIMARY if self.enabled else th.TEXT_DISABLED
         if self.enabled:
             num_color = th.lerp_color(th.TEXT_PRIMARY, self.color, self.hover_t * 0.55)
@@ -137,7 +132,7 @@ class LevelScreen:
             x = start_x + i * (card_w + gap)
             y = start_y
             path = os.path.join(inputs_dir, f"input-{real_lvl:02d}.txt")
-            enabled = os.path.isfile(path)
+            enabled = os.path.isfile(path) and os.path.getsize(path) > 0
             
             # CHỈNH SỬA Ở ĐÂY: Luôn đánh số bắt đầu từ 1, 2, 3... cho mỗi độ khó
             display_lvl = i + 1

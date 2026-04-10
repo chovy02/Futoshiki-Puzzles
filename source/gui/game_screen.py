@@ -6,18 +6,11 @@ from .widgets import Button, draw_dotted_bg
 from utils.file_io import read_input_file
 from solvers.forward_chaining import ForwardChainingSolver
 
+
 def find_outputs_dir():
     here = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(here, "..", "..", "outputs"),
-        os.path.join(here, "..", "outputs"),
-        os.path.abspath("outputs"),
-    ]
-    for c in candidates:
-        parent = os.path.dirname(c)
-        if os.path.isdir(parent):
-            return os.path.abspath(c)
-    return os.path.abspath("outputs")
+    source_dir = os.path.dirname(here)
+    return os.path.join(source_dir, "outputs")
 
 
 class GameScreen:
@@ -50,7 +43,6 @@ class GameScreen:
         self.status_color = th.TEXT_SECONDARY
         self.title_t = 0.0
 
-        # Layout
         self.board_area = pygame.Rect(60, 110, 720, 640)
         self._compute_board_layout()
 
@@ -58,7 +50,6 @@ class GameScreen:
         panel_w = 400
         self.panel_rect = pygame.Rect(panel_x, 110, panel_w, 640)
 
-        # Buttons
         self.back_btn = Button((40, 32, 110, 38), "← Back", self._go_back, font_size=14)
 
         bx = panel_x + 20
@@ -98,6 +89,8 @@ class GameScreen:
         x = self.board_x + c * (self.cell_size + self.sign_size)
         y = self.board_y + r * (self.cell_size + self.sign_size)
         return pygame.Rect(x, y, self.cell_size, self.cell_size)
+
+    # ----- Solver actions -----
 
     def _ensure_steps(self):
         if self.steps:
@@ -184,7 +177,9 @@ class GameScreen:
         out_dir = find_outputs_dir()
         try:
             os.makedirs(out_dir, exist_ok=True)
-            path = os.path.join(out_dir, f"output-{self.level:02d}.txt")
+            basename = os.path.basename(self.input_path)
+            num = basename.replace("input-", "").replace(".txt", "")
+            path = os.path.join(out_dir, f"output-{num}.txt")
             with open(path, "w", encoding="utf-8") as f:
                 self._write_state(f)
             self.output_path = path
@@ -226,6 +221,8 @@ class GameScreen:
         from .size_screen import SizeScreen
         self.app.transition_to(SizeScreen(self.app))
 
+    # ----- Loop -----
+
     def handle_event(self, event):
         for btn in self.buttons:
             btn.handle_event(event)
@@ -234,10 +231,8 @@ class GameScreen:
         self.title_t = min(1.0, self.title_t + dt * 3)
         for btn in self.buttons:
             btn.update(dt, mouse_pos)
-
         for k in list(self.cell_anim.keys()):
             self.cell_anim[k] = min(1.0, self.cell_anim[k] + dt * 5)
-
         if self.auto_play and self.steps:
             self.auto_accum += dt * self.auto_speed
             while self.auto_accum >= 1.0 and self.step_idx < len(self.steps):
@@ -256,10 +251,11 @@ class GameScreen:
                     self.status_msg = f"Solved in {self.solve_time * 1000:.1f} ms"
                     self.status_color = th.SUCCESS
 
+    # ----- Draw -----
+
     def draw(self, surface):
         surface.fill(th.BG_PRIMARY)
         draw_dotted_bg(surface, alpha=8)
-
         self._draw_header(surface)
 
         board_bg = self.board_area.inflate(20, 20)
@@ -268,7 +264,6 @@ class GameScreen:
 
         self._draw_board(surface)
         self._draw_panel(surface)
-
         for btn in self.buttons:
             btn.draw(surface)
 
@@ -279,7 +274,7 @@ class GameScreen:
         alpha = int(255 * title_appear)
         offset = int((1 - title_appear) * 10)
 
-        pill_text = f"{self.size_name} - {info['name'].upper()}"
+        pill_text = f"{self.size_name} · {info['name'].upper()}"
         pill_font = th.get_font(12, bold=True)
         pill_surf = pill_font.render(pill_text, True, info["color"])
         pill_w = pill_surf.get_width() + 22
@@ -466,7 +461,9 @@ class GameScreen:
             label_surf = font_section.render("AUTO SAVED", True, th.TEXT_TERTIARY)
             surface.blit(label_surf, (rect.x + 22, y))
             y += 18
-            path_surf = mono.render(f"outputs/output-{self.level:02d}.txt", True, th.SUCCESS)
+            basename = os.path.basename(self.input_path)
+            num = basename.replace("input-", "").replace(".txt", "")
+            path_surf = mono.render(f"outputs/output-{num}.txt", True, th.SUCCESS)
             surface.blit(path_surf, (rect.x + 22, y))
         elif self.status_msg:
             status_font = th.get_font(13)
