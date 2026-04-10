@@ -59,12 +59,6 @@ class DifficultyCard:
         pygame.draw.rect(temp, bg_color, temp_rect, border_radius=18)
         pygame.draw.rect(temp, border_color, temp_rect, width=border_width, border_radius=18)
 
-        if self.enabled and self.hover_t > 0.05:
-            stripe_h = 4
-            stripe = pygame.Surface((rect.w - 8, stripe_h), pygame.SRCALPHA)
-            stripe.fill((*self.color, int(200 * self.hover_t)))
-            temp.blit(stripe, (4, 4))
-
         badge_radius = 38
         badge_center = (rect.w // 2, 95)
         if self.enabled:
@@ -86,7 +80,7 @@ class DifficultyCard:
         name_color = th.TEXT_PRIMARY if self.enabled else th.TEXT_DISABLED
         if self.enabled:
             name_color = th.lerp_color(th.TEXT_PRIMARY, self.color, self.hover_t * 0.5)
-        name_font = th.get_font(24, bold=True)
+        name_font = th.get_font(30, bold=True)
         name_surf = name_font.render(self.name, True, name_color)
         name_rect = name_surf.get_rect(center=(rect.w // 2, 175))
         temp.blit(name_surf, name_rect)
