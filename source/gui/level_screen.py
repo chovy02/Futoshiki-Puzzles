@@ -4,19 +4,25 @@ import pygame
 from . import theme as th
 from .widgets import Button, draw_dotted_bg
 
-
-DIFFICULTY_INFO = {
-    "easy":    {"name": "Easy",    "color": th.EASY,    "range": (1, 9)},
-    "medium":  {"name": "Medium",  "color": th.MEDIUM,  "range": (10, 18)},
-    "hard":    {"name": "Hard",    "color": th.HARD,    "range": (19, 27)},
-    "extreme": {"name": "Extreme", "color": th.EXTREME, "range": (28, 36)},
+SIZE_START_INDEX = {
+    "4x4": 1,
+    "5x5": 10,
+    "6x6": 19,
+    "7x7": 28,
+    "9x9": 37
 }
 
+DIFFICULTY_INFO = {
+    "easy":    {"name": "Easy",    "color": th.EASY,    "offset": 0, "count": 2},
+    "medium":  {"name": "Medium",  "color": th.MEDIUM,  "offset": 2, "count": 3},
+    "hard":    {"name": "Hard",    "color": th.HARD,    "offset": 5, "count": 2},
+    "extreme": {"name": "Extreme", "color": th.EXTREME, "offset": 7, "count": 2},
+}
 
 def find_inputs_dir():
     here = os.path.dirname(os.path.abspath(__file__))
     for c in [
-        os.path.join(here, "..", "..", "inputs"),
+        os.path.join(here, "..", "inputs"),
         os.path.join(here, "..", "inputs"),
         os.path.abspath("inputs"),
     ]:
@@ -79,13 +85,11 @@ class LevelCard:
         pygame.draw.rect(temp, bg, tr, border_radius=14)
         pygame.draw.rect(temp, border, tr, width=bw, border_radius=14)
 
-        # Hover accent stripe
         if self.enabled and self.hover_t > 0.05:
             stripe = pygame.Surface((rect.w - 8, 3), pygame.SRCALPHA)
             stripe.fill((*self.color, int(200 * self.hover_t)))
             temp.blit(stripe, (4, 4))
 
-        # Level number
         num_color = th.TEXT_PRIMARY if self.enabled else th.TEXT_DISABLED
         if self.enabled:
             num_color = th.lerp_color(th.TEXT_PRIMARY, self.color, self.hover_t * 0.55)
@@ -94,7 +98,6 @@ class LevelCard:
         num_rect = num_surf.get_rect(center=(rect.w // 2, rect.h // 2 - 6))
         temp.blit(num_surf, num_rect)
 
-        # "LEVEL" label
         lbl_font = th.get_font(10, bold=True)
         lbl_color = th.TEXT_TERTIARY if self.enabled else th.TEXT_DISABLED
         lbl_surf = lbl_font.render("LEVEL", True, lbl_color)
@@ -107,31 +110,32 @@ class LevelCard:
 
 
 class LevelScreen:
-    def __init__(self, app, difficulty):
+    def __init__(self, app, size_name, difficulty):
         self.app = app
+        self.size_name = size_name
         self.difficulty = difficulty
         self.info = DIFFICULTY_INFO[difficulty]
         self.title_t = 0.0
 
-        lo, hi = self.info["range"]
+        base_idx = SIZE_START_INDEX[size_name]
+        start_level = base_idx + self.info["offset"]
+        end_level = start_level + self.info["count"] - 1
+
         inputs_dir = find_inputs_dir()
 
-        # 3x3 grid of level cards, centered
         card_w = 150
         card_h = 150
         gap = 22
-        cols = 3
-        rows = 3
-        total_w = card_w * cols + gap * (cols - 1)
-        total_h = card_h * rows + gap * (rows - 1)
+        
+        num_cards = self.info["count"]
+        total_w = card_w * num_cards + gap * (num_cards - 1)
         start_x = (th.WINDOW_WIDTH - total_w) // 2
-        start_y = (th.WINDOW_HEIGHT - total_h) // 2 + 30
+        start_y = (th.WINDOW_HEIGHT - card_h) // 2 + 30
 
         self.cards = []
-        for i, lvl in enumerate(range(lo, hi + 1)):
-            r, c = divmod(i, cols)
-            x = start_x + c * (card_w + gap)
-            y = start_y + r * (card_h + gap)
+        for i, lvl in enumerate(range(start_level, end_level + 1)):
+            x = start_x + i * (card_w + gap)
+            y = start_y
             path = os.path.join(inputs_dir, f"input-{lvl:02d}.txt")
             enabled = os.path.isfile(path)
             card = LevelCard((x, y, card_w, card_h), lvl, self.info["color"],
@@ -143,11 +147,11 @@ class LevelScreen:
 
     def _open(self, level, path):
         from .game_screen import GameScreen
-        self.app.transition_to(GameScreen(self.app, self.difficulty, level, path))
+        self.app.transition_to(GameScreen(self.app, self.size_name, self.difficulty, level, path))
 
     def _go_back(self):
         from .difficulty_screen import DifficultyScreen
-        self.app.transition_to(DifficultyScreen(self.app))
+        self.app.transition_to(DifficultyScreen(self.app, self.size_name))
 
     def handle_event(self, event):
         self.back_btn.handle_event(event)
@@ -168,9 +172,8 @@ class LevelScreen:
         alpha = int(255 * appear)
         offset = int((1 - appear) * 16)
 
-        # Colored pill label
         pill_font = th.get_font(12, bold=True)
-        pill_txt = self.info["name"].upper()
+        pill_txt = f"{self.size_name} - {self.info['name'].upper()}"
         pill_surf = pill_font.render(pill_txt, True, self.info["color"])
         pw = pill_surf.get_width() + 24
         ph = 26
@@ -193,13 +196,6 @@ class LevelScreen:
             line_rect = pygame.Rect(0, 0, line_w, 3)
             line_rect.center = (th.WINDOW_WIDTH // 2, 205 - offset)
             pygame.draw.rect(surface, self.info["color"], line_rect, border_radius=2)
-
-        sub_font = th.get_font(15)
-        lo, hi = self.info["range"]
-        sub_surf = sub_font.render(f"Levels {lo} – {hi}", True, th.TEXT_SECONDARY)
-        sub_surf.set_alpha(alpha)
-        sub_rect = sub_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 232 - offset))
-        surface.blit(sub_surf, sub_rect)
 
         for card in self.cards:
             card.draw(surface)

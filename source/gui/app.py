@@ -25,8 +25,8 @@ class App:
         self.transition_t = 0.0
 
     def run(self):
-        from .difficulty_screen import DifficultyScreen
-        self.transition_to(DifficultyScreen(self))
+        from .size_screen import SizeScreen
+        self.transition_to(SizeScreen(self))
 
         while self.running:
             dt = self.clock.tick(th.FPS) / 1000.0
@@ -42,7 +42,6 @@ class App:
 
             if self.transitioning:
                 self.transition_t += dt * 3.5
-                # Swap screens at the midpoint of the fade
                 if self.transition_t >= 0.5 and self.next_screen is not None:
                     self.current_screen = self.next_screen
                     self.next_screen = None
