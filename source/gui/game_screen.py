@@ -8,6 +8,7 @@ from .widgets import Button, draw_dotted_bg
 from utils.file_io import read_input_file
 from solvers.forward_chaining import ForwardChainingSolver
 from solvers.backward_chaining import BackwardChainingSolver
+from solvers.bruteForce_backtracking import BruteForceBacktrackingSolver
 
 
 def find_outputs_dir():
@@ -26,7 +27,7 @@ def _fmt_memory(peak_bytes: int) -> str:
 
 
 class GameScreen:
-    ALGORITHMS = ["Forward chaining", "Backward chaining", "PySAT"]
+    ALGORITHMS = ["Forward chaining", "Backward chaining", "PySAT", "Brute-force backtracking"]
 
     def __init__(self, app, size_name, difficulty, level, input_path):
         self.app = app
@@ -86,6 +87,28 @@ class GameScreen:
         self.buttons = [self.back_btn, self.solve_btn, self.reset_btn, self.menu_btn]
         self.algo_rect = pygame.Rect(panel_x + 20, self.panel_rect.y + 42, panel_w - 40, 46)
 
+        # --- TÍNH NĂNG STEP-BY-STEP ---
+        self.history_grids = []
+        self.step_idx = 0
+        self.is_stepping = False
+        
+        btn_w = (panel_w - 40 - 10) // 2
+        # Đặt nút điều hướng ngay trên hàng nút Solve/Reset
+        self.prev_btn = Button((bx, by - btn_h - 15, btn_w, btn_h), "← Prev Step", self._step_prev, font_size=14)
+        self.next_btn = Button((bx + btn_w + 10, by - btn_h - 15, btn_w, btn_h), "Next Step →", self._step_next, font_size=14, primary=True)
+    
+    def _step_prev(self):
+        if self.is_stepping and self.step_idx > 0:
+            self.step_idx -= 1
+            self.state.grid = [row[:] for row in self.history_grids[self.step_idx]]
+            self.cell_anim = {} # Xóa hiệu ứng cũ
+
+    def _step_next(self):
+        if self.is_stepping and self.step_idx < len(self.history_grids) - 1:
+            self.step_idx += 1
+            self.state.grid = [row[:] for row in self.history_grids[self.step_idx]]
+            self.cell_anim = {} # Xóa hiệu ứng cũ
+
     def _compute_board_layout(self):
         N = self.N
         sign_size = 24
@@ -110,6 +133,8 @@ class GameScreen:
             return ForwardChainingSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Backward chaining":
             return BackwardChainingSolver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "Brute-force backtracking":
+            return BruteForceBacktrackingSolver(self.original_state, stop_event=self.stop_event)    
         else:  # PySAT — lazy import so missing file won't crash on startup
             from solvers.pysat_solver import PySATSolver
             return PySATSolver(self.original_state)
@@ -127,12 +152,14 @@ class GameScreen:
             inferences = getattr(self.solver, 'num_inferences', None)
 
         if gen == self.solve_gen:   # discard stale result if cancelled
+            history = getattr(self.solver, 'history', []) # Lấy lịch sử ra
             self.thread_result = {
                 "result": result,
                 "elapsed": elapsed,
                 "nodes": nodes,
                 "memory_peak": peak,
                 "num_inferences": inferences,
+                "history": history # Trả lịch sử về
             }
 
     def _solve(self):
@@ -169,6 +196,8 @@ class GameScreen:
         self.num_inferences = None
         self.cell_anim = {}
         self.status_msg = ""
+        self.is_stepping = False
+        self.history_grids = []
 
     def _save_output(self):
         out_dir = find_outputs_dir()
@@ -247,6 +276,11 @@ class GameScreen:
             self.solve_btn.handle_event(event)
             self.reset_btn.handle_event(event)
             self.menu_btn.handle_event(event)
+            
+            # Kích hoạt 2 nút điều khiển nếu đang ở chế độ stepping
+            if getattr(self, 'is_stepping', False):
+                self.prev_btn.handle_event(event)
+                self.next_btn.handle_event(event)
         else:
             # Allow cancel via reset / menu while solving
             self.reset_btn.handle_event(event)
@@ -256,6 +290,10 @@ class GameScreen:
         self.title_t = min(1.0, self.title_t + dt * 3)
         for btn in self.buttons:
             btn.update(dt, mouse_pos)
+            
+        if getattr(self, 'is_stepping', False):
+            self.prev_btn.update(dt, mouse_pos)
+            self.next_btn.update(dt, mouse_pos)
 
         if self.dropdown_open:
             self.dropdown_hover = -1
@@ -269,11 +307,13 @@ class GameScreen:
                     self.dropdown_hover = i
 
         if self.is_solving and self.thread_result is not None:
+            # Lấy dữ liệu
             res = self.thread_result["result"]
             self.solve_time     = self.thread_result["elapsed"]
             self.nodes_expanded = self.thread_result["nodes"]
             self.memory_peak    = self.thread_result["memory_peak"]
             self.num_inferences = self.thread_result["num_inferences"]
+            self.history_grids  = self.thread_result.get("history", []) # Bắt lịch sử
 
             if res is None:
                 self.status_msg   = "No solution found"
@@ -288,6 +328,14 @@ class GameScreen:
                     for c in range(self.N):
                         if self.original_state.grid[r][c] == 0 and self.state.grid[r][c] != 0:
                             self.cell_anim[(r, c)] = 0.0
+
+            # Kích hoạt chế độ Step-by-step nếu dùng Brute-force
+            if self.history_grids and self.algo == "Brute-force backtracking":
+                self.is_stepping = True
+                self.step_idx = len(self.history_grids) - 1
+                self.state.grid = [row[:] for row in self.history_grids[self.step_idx]]
+            else:
+                self.is_stepping = False
 
             self.is_solving    = False
             self.thread_result = None
@@ -446,6 +494,20 @@ class GameScreen:
         sw2  = (pw - gap) // 2
         show_inf = self.algo in ("Forward chaining", "Backward chaining")
 
+        # (Sau dòng vẽ auto_saved hoặc status_msg)
+        
+        # --- VẼ NÚT ĐIỀU HƯỚNG ---
+        if getattr(self, 'is_stepping', False):
+            self.prev_btn.draw(surface)
+            self.next_btn.draw(surface)
+            
+            # Text hiển thị tiến độ
+            step_text = f"Step: {self.step_idx + 1} / {len(self.history_grids)}"
+            if len(self.history_grids) >= getattr(self.solver, 'MAX_HISTORY', 20000):
+                step_text += " (Maxed)"
+            step_surf = th.get_font(12, bold=True).render(step_text, True, th.TEXT_SECONDARY)
+            surface.blit(step_surf, (self.prev_btn.rect.x, self.prev_btn.rect.y - 20))
+
         def stat_box(x, y, w, label, value, color=None):
             sr = pygame.Rect(x, y, w, sh)
             pygame.draw.rect(surface, th.BG_TERTIARY, sr, border_radius=10)
@@ -458,28 +520,30 @@ class GameScreen:
         mem_txt   = _fmt_memory(self.memory_peak) if self.memory_peak > 0 else "—"
         inf_txt   = str(self.num_inferences) if self.num_inferences is not None else "—"
 
+        time_txt  = f"{self.solve_time * 1000:.1f}ms" if self.solve_time > 0 else "—"
+        nodes_txt = str(self.nodes_expanded) if self.nodes_expanded > 0 else "—"
+        mem_txt   = _fmt_memory(self.memory_peak) if self.memory_peak > 0 else "—"
+        inf_txt   = str(self.num_inferences) if self.num_inferences is not None else "—"
+        
+        # Lấy số steps từ lịch sử (nếu có)
+        steps_txt = str(len(getattr(self, 'history_grids', []))) if getattr(self, 'history_grids', []) else "—"
+
         # Row 1: TIME | EXPANDED
         stat_box(bx,          y, sw2, "TIME", time_txt, th.SUCCESS if self.is_solved else None)
         stat_box(bx+sw2+gap,  y, sw2, "EXPANDED", nodes_txt)
         y += sh + gap
 
-        # Row 2: MEMORY | INFERENCES  (or MEMORY full-width for PySAT)
-        if show_inf:
+        # Row 2: MEMORY | [INFERENCES hoặc STEPS]
+        if self.algo in ("Forward chaining", "Backward chaining"):
             stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
             stat_box(bx+sw2+gap, y, sw2, "INFERENCES", inf_txt)
+        elif self.algo == "Brute-force backtracking":
+            stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
+            stat_box(bx+sw2+gap, y, sw2, "STEPS", steps_txt)
         else:
+            # Các thuật toán khác (như PySAT) sẽ để MEMORY tràn viền (full width)
             stat_box(bx, y, pw, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
         y += sh + gap
-
-        if self.is_solved:
-            surface.blit(font_sec.render("AUTO SAVED", True, th.TEXT_TERTIARY), (rect.x + 22, y))
-            y += 18
-            num = os.path.basename(self.input_path).replace("input-","").replace(".txt","")
-            ps = th.get_mono(11).render(f"outputs/output-{num}.txt", True, th.SUCCESS)
-            surface.blit(ps, (rect.x + 22, y))
-        elif self.status_msg:
-            ss = th.get_font(13).render(self.status_msg, True, self.status_color)
-            surface.blit(ss, (rect.x + 22, y))
 
     def _draw_dropdown(self, surface):
         ar   = self.algo_rect
