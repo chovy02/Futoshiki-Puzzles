@@ -1,7 +1,7 @@
 """Game screen - board + side panel with algorithm selection and controls."""
 import os
-import time
 import threading
+import tracemalloc
 import pygame
 from . import theme as th
 from .widgets import Button, draw_dotted_bg
@@ -16,7 +16,18 @@ def find_outputs_dir():
     return os.path.join(source_dir, "outputs")
 
 
+def _fmt_memory(peak_bytes: int) -> str:
+    if peak_bytes < 1024:
+        return f"{peak_bytes} B"
+    elif peak_bytes < 1024 * 1024:
+        return f"{peak_bytes / 1024:.1f} KB"
+    else:
+        return f"{peak_bytes / 1024 / 1024:.1f} MB"
+
+
 class GameScreen:
+    ALGORITHMS = ["Forward chaining", "Backward chaining", "PySAT"]
+
     def __init__(self, app, size_name, difficulty, level, input_path):
         self.app = app
         self.size_name = size_name
@@ -32,16 +43,23 @@ class GameScreen:
         self.is_solved = False
         self.solve_time = 0.0
         self.nodes_expanded = 0
+        self.memory_peak = 0
+        self.num_inferences = None
         self.cell_anim = {}
 
-        # Biến phục vụ chạy ngầm (Threading)
+        # Threading
         self.is_solving = False
         self.solve_thread = None
         self.thread_result = None
+        self.stop_event = threading.Event()
+        self.solve_gen = 0
 
-        self.algorithms = ["Forward chaining", "Backward chaining"]
+        # Algorithm dropdown
         self.algo_index = 0
-        self.algo = self.algorithms[self.algo_index]
+        self.algo = self.ALGORITHMS[self.algo_index]
+        self.dropdown_open = False
+        self.dropdown_hover = -1
+
         self.status_msg = ""
         self.status_color = th.TEXT_SECONDARY
         self.title_t = 0.0
@@ -63,11 +81,10 @@ class GameScreen:
 
         self.solve_btn = Button((bx, by, bw3, btn_h), "Solve", self._solve, primary=True, font_size=15)
         self.reset_btn = Button((bx + bw3 + gap, by, bw3, btn_h), "Reset", self._reset, font_size=15)
-        self.menu_btn = Button((bx + 2 * (bw3 + gap), by, bw3, btn_h), "Menu", self._go_to_menu, font_size=14)
+        self.menu_btn  = Button((bx + 2*(bw3+gap), by, bw3, btn_h), "Menu", self._go_to_menu, font_size=14)
 
-        self.buttons = [
-            self.back_btn, self.solve_btn, self.reset_btn, self.menu_btn
-        ]
+        self.buttons = [self.back_btn, self.solve_btn, self.reset_btn, self.menu_btn]
+        self.algo_rect = pygame.Rect(panel_x + 20, self.panel_rect.y + 42, panel_w - 40, 46)
 
     def _compute_board_layout(self):
         N = self.N
@@ -85,58 +102,73 @@ class GameScreen:
         y = self.board_y + r * (self.cell_size + self.sign_size)
         return pygame.Rect(x, y, self.cell_size, self.cell_size)
 
-    # ----- Solver Threading -----
+    # ── Solver threading ──────────────────────────────────────────────────────
 
-    def _run_solver_in_background(self):
-        """Hàm này sẽ chạy trên một luồng riêng biệt."""
-        start_time = time.perf_counter()
-        
-        # Gọi hàm solve của thuật toán
+    def _make_solver(self):
+        """Instantiate the correct solver. PySAT imported lazily."""
+        if self.algo == "Forward chaining":
+            return ForwardChainingSolver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "Backward chaining":
+            return BackwardChainingSolver(self.original_state, stop_event=self.stop_event)
+        else:  # PySAT — lazy import so missing file won't crash on startup
+            from solvers.pysat_solver import PySATSolver
+            return PySATSolver(self.original_state)
+
+    def _run_solver_in_background(self, gen: int):
+        tracemalloc.start()
         result = self.solver.solve()
-        
-        elapsed = time.perf_counter() - start_time
-        nodes = getattr(self.solver, 'nodes_expanded', 0)
-        
-        # Lưu kết quả vào biến tạm để luồng chính xử lý
-        self.thread_result = {
-            "result": result,
-            "elapsed": elapsed,
-            "nodes": nodes
-        }
+        _, peak = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
+
+        elapsed  = getattr(self.solver, 'elapsed', 0.0)
+        nodes    = getattr(self.solver, 'nodes_expanded', 0)
+        inferences = None
+        if self.algo in ("Forward chaining", "Backward chaining"):
+            inferences = getattr(self.solver, 'num_inferences', None)
+
+        if gen == self.solve_gen:   # discard stale result if cancelled
+            self.thread_result = {
+                "result": result,
+                "elapsed": elapsed,
+                "nodes": nodes,
+                "memory_peak": peak,
+                "num_inferences": inferences,
+            }
 
     def _solve(self):
         if self.is_solved or self.is_solving:
             return
-
         self.status_msg = "Solving..."
         self.status_color = th.TEXT_SECONDARY
         self.is_solving = True
         self.thread_result = None
-        
-        # Khởi tạo solver dựa trên thuật toán đã chọn
-        if self.algo == "Forward chaining":
-            self.solver = ForwardChainingSolver(self.original_state)
-        elif self.algo == "Backward chaining":
-            self.solver = BackwardChainingSolver(self.original_state)
-            
-        # Tạo và bắt đầu luồng chạy ngầm
-        self.solve_thread = threading.Thread(target=self._run_solver_in_background)
-        self.solve_thread.daemon = True # Tự động đóng thread khi tắt app
+        self.stop_event = threading.Event()
+        self.solve_gen += 1
+        self.solver = self._make_solver()
+        self.solve_thread = threading.Thread(
+            target=self._run_solver_in_background,
+            args=(self.solve_gen,), daemon=True
+        )
         self.solve_thread.start()
 
-    def _reset(self):
-        # Nếu đang giải thì không cho reset (để tránh xung đột thread)
+    def _cancel_solve(self):
         if self.is_solving:
-            return
-            
+            self.stop_event.set()
+            self.solve_gen += 1
+            self.is_solving = False
+            self.thread_result = None
+            self.status_msg = ""
+
+    def _reset(self):
+        self._cancel_solve()
         self.state = self.original_state.clone()
         self.is_solved = False
         self.solve_time = 0.0
         self.nodes_expanded = 0
+        self.memory_peak = 0
+        self.num_inferences = None
         self.cell_anim = {}
         self.status_msg = ""
-
-    # ... (Các hàm _save_output, _write_state, _go_back giữ nguyên) ...
 
     def _save_output(self):
         out_dir = find_outputs_dir()
@@ -159,79 +191,111 @@ class GameScreen:
                 line += str(self.state.grid[r][c])
                 if c < N - 1:
                     h = self.state.h_constraints[r][c]
-                    if h == 1: line += " < "
+                    if h == 1:    line += " < "
                     elif h == -1: line += " > "
-                    else: line += "   "
+                    else:          line += "   "
             f.write(line + "\n")
             if r < N - 1:
                 vline = ""
                 for c in range(N):
                     v = self.state.v_constraints[r][c]
-                    if v == 1: vline += "^   "
+                    if v == 1:    vline += "^   "
                     elif v == -1: vline += "v   "
-                    else: vline += "    "
+                    else:          vline += "    "
                 f.write(vline + "\n")
 
     def _go_back(self):
+        self._cancel_solve()
         from .level_screen import LevelScreen
         self.app.transition_to(LevelScreen(self.app, self.size_name, self.difficulty))
 
     def _go_to_menu(self):
+        self._cancel_solve()
         from .size_screen import SizeScreen
         self.app.transition_to(SizeScreen(self.app))
 
-    # ----- Loop -----
+    # ── Event / Update / Draw ─────────────────────────────────────────────────
 
     def handle_event(self, event):
-        # Chỉ nhận sự kiện nút bấm khi không đang giải
-        if not self.is_solving:
-            for btn in self.buttons:
-                btn.handle_event(event)
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            mouse = event.pos
 
-            if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                mouse = event.pos
-                algo_rect = pygame.Rect(self.panel_rect.x + 20, self.panel_rect.y + 42, self.panel_rect.w - 40, 46)
-                if algo_rect.collidepoint(mouse):
-                    self.algo_index = (self.algo_index + 1) % len(self.algorithms)
-                    self.algo = self.algorithms[self.algo_index]
-                    self._reset()
+            if self.dropdown_open:
+                for i, name in enumerate(self.ALGORITHMS):
+                    item_rect = pygame.Rect(
+                        self.algo_rect.x,
+                        self.algo_rect.bottom + 4 + i * 44,
+                        self.algo_rect.w, 44
+                    )
+                    if item_rect.collidepoint(mouse):
+                        if i != self.algo_index:
+                            self.algo_index = i
+                            self.algo = self.ALGORITHMS[i]
+                            self._reset()
+                        break
+                self.dropdown_open = False
+                return
+
+            if not self.is_solving and self.algo_rect.collidepoint(mouse):
+                self.dropdown_open = True
+                return
+
+        # Back button always works (calls _cancel_solve internally)
+        self.back_btn.handle_event(event)
+
+        if not self.is_solving:
+            self.solve_btn.handle_event(event)
+            self.reset_btn.handle_event(event)
+            self.menu_btn.handle_event(event)
+        else:
+            # Allow cancel via reset / menu while solving
+            self.reset_btn.handle_event(event)
+            self.menu_btn.handle_event(event)
 
     def update(self, dt, mouse_pos):
         self.title_t = min(1.0, self.title_t + dt * 3)
-        
-        # Update nút (nếu không đang giải)
         for btn in self.buttons:
             btn.update(dt, mouse_pos)
-            
-        # Kiểm tra xem luồng chạy ngầm đã xong chưa
+
+        if self.dropdown_open:
+            self.dropdown_hover = -1
+            for i in range(len(self.ALGORITHMS)):
+                item_rect = pygame.Rect(
+                    self.algo_rect.x,
+                    self.algo_rect.bottom + 4 + i * 44,
+                    self.algo_rect.w, 44
+                )
+                if item_rect.collidepoint(mouse_pos):
+                    self.dropdown_hover = i
+
         if self.is_solving and self.thread_result is not None:
             res = self.thread_result["result"]
-            self.solve_time = self.thread_result["elapsed"]
+            self.solve_time     = self.thread_result["elapsed"]
             self.nodes_expanded = self.thread_result["nodes"]
-            
+            self.memory_peak    = self.thread_result["memory_peak"]
+            self.num_inferences = self.thread_result["num_inferences"]
+
             if res is None:
-                self.status_msg = "No solution found"
+                self.status_msg   = "No solution found"
                 self.status_color = th.ERROR
             else:
-                self.state = res
+                self.state    = res
                 self.is_solved = True
-                self.status_msg = f"Solved in {self.solve_time * 1000:.1f} ms"
+                self.status_msg   = f"Solved in {self.solve_time * 1000:.1f} ms"
                 self.status_color = th.SUCCESS
                 self._save_output()
-                # Kích hoạt hiệu ứng số hiện lên
                 for r in range(self.N):
                     for c in range(self.N):
                         if self.original_state.grid[r][c] == 0 and self.state.grid[r][c] != 0:
                             self.cell_anim[(r, c)] = 0.0
-            
-            self.is_solving = False # Kết thúc trạng thái đang giải
+
+            self.is_solving    = False
             self.thread_result = None
 
-        # Hiệu ứng animation
         for k in list(self.cell_anim.keys()):
             self.cell_anim[k] = min(1.0, self.cell_anim[k] + dt * 5)
 
-    # ----- Draw -----
+    # ── Draw ──────────────────────────────────────────────────────────────────
 
     def draw(self, surface):
         surface.fill(th.BG_PRIMARY)
@@ -244,33 +308,28 @@ class GameScreen:
 
         self._draw_board(surface)
         self._draw_panel(surface)
-        
         for btn in self.buttons:
-            # Làm mờ nút Solve/Reset/Menu khi đang tính toán
-            if self.is_solving and btn != self.back_btn:
-                btn.draw(surface) # Bạn có thể chỉnh sửa class Button để hỗ trợ disable/fade nếu muốn
-            else:
-                btn.draw(surface)
+            btn.draw(surface)
+        if self.dropdown_open:
+            self._draw_dropdown(surface)
 
     def _draw_header(self, surface):
         from .level_screen import DIFFICULTY_INFO
         info = DIFFICULTY_INFO[self.difficulty]
         title_appear = th.ease_out_cubic(self.title_t)
-        alpha = int(255 * title_appear)
+        alpha  = int(255 * title_appear)
         offset = int((1 - title_appear) * 10)
 
         pill_text = f"{self.size_name} · {info['name'].upper()}"
         pill_font = th.get_font(12, bold=True)
         pill_surf = pill_font.render(pill_text, True, info["color"])
-        pill_w = pill_surf.get_width() + 22
-        pill_h = 24
+        pill_w, pill_h = pill_surf.get_width() + 22, 24
         pill_bg = pygame.Surface((pill_w, pill_h), pygame.SRCALPHA)
         pygame.draw.rect(pill_bg, (*info["color"], 30), pill_bg.get_rect(), border_radius=12)
         pygame.draw.rect(pill_bg, (*info["color"], 130), pill_bg.get_rect(), width=1, border_radius=12)
         pill_bg.blit(pill_surf, (11, (pill_h - pill_surf.get_height()) // 2))
         pill_bg.set_alpha(alpha)
-        pill_rect = pill_bg.get_rect()
-        pill_rect.topleft = (170, 39 - offset)
+        pill_rect = pill_bg.get_rect(topleft=(170, 39 - offset))
         surface.blit(pill_bg, pill_rect)
 
         info_font = th.get_font(15)
@@ -304,100 +363,155 @@ class GameScreen:
                 if val != 0:
                     scale = 1.0
                     if (r, c) in self.cell_anim:
-                        anim_t = self.cell_anim[(r, c)]
-                        if anim_t < 1.0:
-                            scale = 0.4 + 0.6 * th.ease_out_back(anim_t)
+                        t = self.cell_anim[(r, c)]
+                        if t < 1.0:
+                            scale = 0.4 + 0.6 * th.ease_out_back(t)
                     font_size = max(12, int(cs * 0.55 * scale))
                     val_font = th.get_font(font_size, bold=True)
                     val_surf = val_font.render(str(val), True, text_col)
-                    val_rect = val_surf.get_rect(center=rect.center)
-                    surface.blit(val_surf, val_rect)
+                    surface.blit(val_surf, val_surf.get_rect(center=rect.center))
 
-        # Draw constraints... (phần vẽ dấu < > ^ v giữ nguyên)
         sign_font = th.get_font(max(12, int(cs * 0.32)), bold=True)
         for r in range(N):
             for c in range(N - 1):
                 h = self.state.h_constraints[r][c]
                 if h == 0: continue
-                ch = "<" if h == 1 else ">"
                 cx = self.board_x + c * (cs + ss) + cs + ss // 2
                 cy = self.board_y + r * (cs + ss) + cs // 2
-                ssurf = sign_font.render(ch, True, th.SIGN_COLOR)
-                surface.blit(ssurf, ssurf.get_rect(center=(cx, cy)))
+                s = sign_font.render("<" if h == 1 else ">", True, th.SIGN_COLOR)
+                surface.blit(s, s.get_rect(center=(cx, cy)))
         for r in range(N - 1):
             for c in range(N):
                 v = self.state.v_constraints[r][c]
                 if v == 0: continue
-                ch = "^" if v == 1 else "v"
                 cx = self.board_x + c * (cs + ss) + cs // 2
                 cy = self.board_y + r * (cs + ss) + cs + ss // 2
-                ssurf = sign_font.render(ch, True, th.SIGN_COLOR)
-                surface.blit(ssurf, ssurf.get_rect(center=(cx, cy)))
+                s = sign_font.render("^" if v == 1 else "v", True, th.SIGN_COLOR)
+                surface.blit(s, s.get_rect(center=(cx, cy)))
 
     def _draw_panel(self, surface):
         rect = self.panel_rect
         pygame.draw.rect(surface, th.BG_SECONDARY, rect, border_radius=18)
         pygame.draw.rect(surface, th.BORDER, rect, width=1, border_radius=18)
 
-        font_section = th.get_font(11, bold=True)
-        font_label = th.get_font(11, bold=True)
+        font_sec = th.get_font(11, bold=True)
+        font_lbl = th.get_font(11, bold=True)
 
+        # ── Algorithm box ──────────────────────────────────────────────────
         y = rect.y + 22
-        sec = font_section.render("ALGORITHM", True, th.TEXT_TERTIARY)
-        surface.blit(sec, (rect.x + 22, y))
+        surface.blit(font_sec.render("ALGORITHM", True, th.TEXT_TERTIARY), (rect.x + 22, y))
         y += 20
 
-        algo_rect = pygame.Rect(rect.x + 20, y, rect.w - 40, 46)
-        pygame.draw.rect(surface, th.BG_TERTIARY, algo_rect, border_radius=10)
-        pygame.draw.rect(surface, th.BORDER, algo_rect, width=1, border_radius=10)
-        algo_font = th.get_font(15, bold=True)
-        algo_surf = algo_font.render(self.algo, True, th.TEXT_PRIMARY)
-        surface.blit(algo_surf, (algo_rect.x + 16, algo_rect.centery - algo_surf.get_height() // 2))
+        ar = self.algo_rect
+        algo_bg = th.BG_TERTIARY if not self.is_solving else th.BG_SECONDARY
+        pygame.draw.rect(surface, algo_bg, ar, border_radius=10)
+        pygame.draw.rect(surface, th.BORDER_HOVER if not self.is_solving else th.BORDER,
+                         ar, width=1, border_radius=10)
 
-        # Badge hiển thị trạng thái giải
-        badge_text = "SOLVING..." if self.is_solving else ("ACTIVE" if not self.is_solved else "DONE")
-        badge_color = th.ACCENT if self.is_solving else (th.SUCCESS if self.is_solved else th.ACCENT)
-        badge_font = th.get_font(10, bold=True)
-        badge_surf = badge_font.render(badge_text, True, badge_color)
+        algo_surf = th.get_font(15, bold=True).render(self.algo, True, th.TEXT_PRIMARY)
+        surface.blit(algo_surf, (ar.x + 16, ar.centery - algo_surf.get_height() // 2))
+
+        if not self.is_solving:
+            chev = th.get_font(12).render("▾", True, th.TEXT_TERTIARY)
+            surface.blit(chev, (ar.right - chev.get_width() - 12,
+                                ar.centery - chev.get_height() // 2))
+
+        # Status badge
+        if self.is_solving:
+            btxt, bcol = "SOLVING...", th.WARNING
+        elif self.is_solved:
+            btxt, bcol = "DONE", th.SUCCESS
+        else:
+            btxt, bcol = "ACTIVE", th.ACCENT
+
+        badge_surf = th.get_font(10, bold=True).render(btxt, True, bcol)
         bw, bh = badge_surf.get_width() + 14, 20
         badge_rect = pygame.Rect(0, 0, bw, bh)
-        badge_rect.right, badge_rect.centery = algo_rect.right - 12, algo_rect.centery
-        badge_layer = pygame.Surface((bw, bh), pygame.SRCALPHA)
-        pygame.draw.rect(badge_layer, (*badge_color, 32), badge_layer.get_rect(), border_radius=10)
-        surface.blit(badge_layer, badge_rect)
+        badge_rect.right   = ar.right - (30 if not self.is_solving else 12)
+        badge_rect.centery = ar.centery
+        bl = pygame.Surface((bw, bh), pygame.SRCALPHA)
+        pygame.draw.rect(bl, (*bcol, 32), bl.get_rect(), border_radius=10)
+        surface.blit(bl, badge_rect)
         surface.blit(badge_surf, (badge_rect.x + 7, badge_rect.centery - badge_surf.get_height() // 2))
 
-        y = algo_rect.bottom + 22
-        sec = font_section.render("STATISTICS", True, th.TEXT_TERTIARY)
-        surface.blit(sec, (rect.x + 22, y))
+        # ── Statistics ─────────────────────────────────────────────────────
+        y = ar.bottom + 22
+        surface.blit(font_sec.render("STATISTICS", True, th.TEXT_TERTIARY), (rect.x + 22, y))
         y += 20
 
-        stat_w, stat_h = (rect.w - 40 - 10) // 2, 64
-        def draw_stat(x, y, label, value, color=None):
-            srect = pygame.Rect(x, y, stat_w, stat_h)
-            pygame.draw.rect(surface, th.BG_TERTIARY, srect, border_radius=10)
-            lab_surf = font_label.render(label, True, th.TEXT_TERTIARY)
-            surface.blit(lab_surf, (srect.x + 14, srect.y + 12))
-            val_font = th.get_font(20, bold=True)
-            val_surf = val_font.render(value, True, color or th.TEXT_PRIMARY)
-            surface.blit(val_surf, (srect.x + 14, srect.y + 28))
+        bx   = rect.x + 20
+        pw   = rect.w - 40
+        gap  = 8
+        sh   = 58
+        sw2  = (pw - gap) // 2
+        show_inf = self.algo in ("Forward chaining", "Backward chaining")
 
-        cells_filled = sum(1 for r in range(self.N) for c in range(self.N) if self.state.grid[r][c] != 0)
-        time_text = f"{self.solve_time * 1000:.1f}ms" if self.solve_time > 0 else "—"
-        draw_stat(rect.x + 20, y, "TIME", time_text, th.SUCCESS if self.is_solved else None)
-        draw_stat(rect.x + 20 + stat_w + 10, y, "EXPANDED", str(self.nodes_expanded) if self.nodes_expanded > 0 else "—")
-        y += stat_h + 10
-        draw_stat(rect.x + 20, y, "FILLED", f"{cells_filled}/{self.N*self.N}")
-        
-        y += stat_h + 20
+        def stat_box(x, y, w, label, value, color=None):
+            sr = pygame.Rect(x, y, w, sh)
+            pygame.draw.rect(surface, th.BG_TERTIARY, sr, border_radius=10)
+            surface.blit(font_lbl.render(label, True, th.TEXT_TERTIARY), (sr.x + 12, sr.y + 10))
+            vs = th.get_font(18, bold=True).render(value, True, color or th.TEXT_PRIMARY)
+            surface.blit(vs, (sr.x + 12, sr.y + 26))
+
+        time_txt  = f"{self.solve_time * 1000:.1f}ms" if self.solve_time > 0 else "—"
+        nodes_txt = str(self.nodes_expanded) if self.nodes_expanded > 0 else "—"
+        mem_txt   = _fmt_memory(self.memory_peak) if self.memory_peak > 0 else "—"
+        inf_txt   = str(self.num_inferences) if self.num_inferences is not None else "—"
+
+        # Row 1: TIME | EXPANDED
+        stat_box(bx,          y, sw2, "TIME", time_txt, th.SUCCESS if self.is_solved else None)
+        stat_box(bx+sw2+gap,  y, sw2, "EXPANDED", nodes_txt)
+        y += sh + gap
+
+        # Row 2: MEMORY | INFERENCES  (or MEMORY full-width for PySAT)
+        if show_inf:
+            stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
+            stat_box(bx+sw2+gap, y, sw2, "INFERENCES", inf_txt)
+        else:
+            stat_box(bx, y, pw, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
+        y += sh + gap
+
         if self.is_solved:
-            label_surf = font_section.render("AUTO SAVED", True, th.TEXT_TERTIARY)
-            surface.blit(label_surf, (rect.x + 22, y))
+            surface.blit(font_sec.render("AUTO SAVED", True, th.TEXT_TERTIARY), (rect.x + 22, y))
             y += 18
-            basename = os.path.basename(self.input_path)
-            num = basename.replace("input-", "").replace(".txt", "")
-            path_surf = th.get_mono(11).render(f"outputs/output-{num}.txt", True, th.SUCCESS)
-            surface.blit(path_surf, (rect.x + 22, y))
+            num = os.path.basename(self.input_path).replace("input-","").replace(".txt","")
+            ps = th.get_mono(11).render(f"outputs/output-{num}.txt", True, th.SUCCESS)
+            surface.blit(ps, (rect.x + 22, y))
         elif self.status_msg:
-            status_surf = th.get_font(13).render(self.status_msg, True, self.status_color)
-            surface.blit(status_surf, (rect.x + 22, y))
+            ss = th.get_font(13).render(self.status_msg, True, self.status_color)
+            surface.blit(ss, (rect.x + 22, y))
+
+    def _draw_dropdown(self, surface):
+        ar   = self.algo_rect
+        n    = len(self.ALGORITHMS)
+        item_h = 44
+        dh   = item_h * n + 8
+
+        shadow = pygame.Surface((ar.w + 8, dh + 8), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0,0,0,60), shadow.get_rect(), border_radius=12)
+        surface.blit(shadow, (ar.x - 4, ar.bottom + 4))
+
+        dd = pygame.Rect(ar.x, ar.bottom + 4, ar.w, dh)
+        pygame.draw.rect(surface, th.BG_ELEVATED, dd, border_radius=12)
+        pygame.draw.rect(surface, th.BORDER_HOVER, dd, width=1, border_radius=12)
+
+        for i, name in enumerate(self.ALGORITHMS):
+            ir = pygame.Rect(ar.x + 4, dd.y + 4 + i * item_h, ar.w - 8, item_h - 4)
+            is_cur = (i == self.algo_index)
+            is_hov = (i == self.dropdown_hover)
+
+            if is_cur:
+                pygame.draw.rect(surface, th.BG_TERTIARY, ir, border_radius=8)
+            elif is_hov:
+                hs = pygame.Surface(ir.size, pygame.SRCALPHA)
+                pygame.draw.rect(hs, (*th.ACCENT, 20), hs.get_rect(), border_radius=8)
+                surface.blit(hs, ir)
+
+            tc = th.ACCENT if is_cur else (th.TEXT_PRIMARY if is_hov else th.TEXT_SECONDARY)
+            ts = th.get_font(14, bold=is_cur).render(name, True, tc)
+            surface.blit(ts, (ir.x + 14, ir.centery - ts.get_height() // 2))
+
+            if is_cur:
+                dot = th.get_font(10).render("●", True, th.ACCENT)
+                surface.blit(dot, (ir.right - dot.get_width() - 12,
+                                   ir.centery - dot.get_height() // 2))

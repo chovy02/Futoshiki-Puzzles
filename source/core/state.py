@@ -142,3 +142,91 @@ class State:
             if rule == -1 and not (v > bottom_v): return False
         return True
 
+    def get_pruned_domain(self, r: int, c: int) -> List[int]:
+        """Prune domain of cell (r, c) using row/col uniqueness + inequality constraints."""
+        domain = set(self.domains[r][c])
+
+        # Row uniqueness
+        for cc in range(self.N):
+            if cc != c and self.grid[r][cc] != 0:
+                domain.discard(self.grid[r][cc])
+        # Column uniqueness
+        for rr in range(self.N):
+            if rr != r and self.grid[rr][c] != 0:
+                domain.discard(self.grid[rr][c])
+        # Inequality constraints
+        domain = self._prune_inequality(r, c, domain)
+
+        return sorted(domain)
+
+    def _prune_inequality(self, r: int, c: int, domain: set) -> set:
+        """Prune domain based on all 4 inequality neighbors."""
+        # Left neighbor
+        if c > 0 and self.h_constraints[r][c - 1] != 0:
+            domain = self._prune_by_neighbor(
+                domain, self.h_constraints[r][c - 1],
+                self.grid[r][c - 1], self.domains[r][c - 1], is_greater=True
+            )
+        # Right neighbor
+        if c < self.N - 1 and self.h_constraints[r][c] != 0:
+            domain = self._prune_by_neighbor(
+                domain, self.h_constraints[r][c],
+                self.grid[r][c + 1], self.domains[r][c + 1], is_greater=False
+            )
+        # Top neighbor
+        if r > 0 and self.v_constraints[r - 1][c] != 0:
+            domain = self._prune_by_neighbor(
+                domain, self.v_constraints[r - 1][c],
+                self.grid[r - 1][c], self.domains[r - 1][c], is_greater=True
+            )
+        # Bottom neighbor
+        if r < self.N - 1 and self.v_constraints[r][c] != 0:
+            domain = self._prune_by_neighbor(
+                domain, self.v_constraints[r][c],
+                self.grid[r + 1][c], self.domains[r + 1][c], is_greater=False
+            )
+        return domain
+
+    def _prune_by_neighbor(self, domain: set, sign: int, neighbor_val: int,
+                           neighbor_domain: List[int], is_greater: bool) -> set:
+        """Prune domain based on one inequality neighbor.
+        is_greater=True means constraint says neighbor <sign> us (we are on the right/bottom side).
+        is_greater=False means constraint says us <sign> neighbor (we are on the left/top side).
+        """
+        if is_greater:
+            if neighbor_val != 0:
+                if sign == 1:  return {v for v in domain if v > neighbor_val}
+                else:          return {v for v in domain if v < neighbor_val}
+            elif neighbor_domain:
+                if sign == 1:  return {v for v in domain if v > min(neighbor_domain)}
+                else:          return {v for v in domain if v < max(neighbor_domain)}
+        else:
+            if neighbor_val != 0:
+                if sign == 1:  return {v for v in domain if v < neighbor_val}
+                else:          return {v for v in domain if v > neighbor_val}
+            elif neighbor_domain:
+                if sign == 1:  return {v for v in domain if v < max(neighbor_domain)}
+                else:          return {v for v in domain if v > min(neighbor_domain)}
+        return domain
+
+    def propagate(self) -> Tuple[bool, List[Tuple[int, int, int]]]:
+        """Run forward chaining: prune + unit-propagate until fixed point."""
+        derived: List[Tuple[int, int, int]] = []
+        changed = True
+        while changed:
+            changed = False
+            for r in range(self.N):
+                for c in range(self.N):
+                    if self.grid[r][c] != 0:
+                        continue
+                    new_domain = self.get_pruned_domain(r, c)
+                    if not new_domain:
+                        return False, derived
+                    if len(new_domain) < len(self.domains[r][c]):
+                        self.domains[r][c] = new_domain
+                        changed = True
+                    if len(new_domain) == 1:
+                        self.grid[r][c] = new_domain[0]
+                        derived.append((r, c, new_domain[0]))
+                        changed = True
+        return True, derived
