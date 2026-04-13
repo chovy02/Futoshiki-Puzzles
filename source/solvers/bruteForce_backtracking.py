@@ -11,7 +11,7 @@ class BruteForceBacktrackingSolver:
         
         # --- CODE MỚI: Thêm mảng lịch sử ---
         self.history = []
-        self.MAX_HISTORY = 20000  # Giới hạn để tránh tràn RAM với lưới quá lớn
+        self.MAX_HISTORY = 2000000  # Giới hạn để tránh tràn RAM với lưới quá lớn
 
     def solve(self) -> Optional[State]:
         self.nodes_expanded = 0
@@ -21,11 +21,6 @@ class BruteForceBacktrackingSolver:
         
         # Ghi lại trạng thái ban đầu
         self.history.append([row[:] for row in init_state.grid])
-
-        ok, _ = init_state.propagate()
-        if not ok:
-            self.elapsed = time.perf_counter() - start
-            return None
 
         result = self._backtrack(init_state)
         
@@ -53,13 +48,6 @@ class BruteForceBacktrackingSolver:
                 # --- CODE MỚI: Ghi lại lịch sử sau khi gán giá trị ---
                 if len(self.history) < self.MAX_HISTORY:
                     self.history.append([row[:] for row in new_state.grid])
-                
-                ok, _ = new_state.propagate()
-                if not ok:
-                    # Nếu miền bị rỗng -> Cắt tỉa. Ghi lại lưới cũ để thể hiện bước lùi.
-                    if len(self.history) < self.MAX_HISTORY:
-                        self.history.append([row[:] for row in current_state.grid])
-                    continue
                     
                 result = self._backtrack(new_state)
                 if result is not None:
@@ -73,16 +61,4 @@ class BruteForceBacktrackingSolver:
 
     def _select_unassigned_variable(self, state: 'State') -> Tuple[int, int]:
         empty_cells = state.get_empty_cells()
-        
-        def mrv_degree_key(cell: Tuple[int, int]):
-            r, c = cell
-            domain_size = len(state.domains[r][c])
-            degree = 0
-            if c > 0 and state.h_constraints[r][c - 1] != 0: degree += 1
-            if c < state.N - 1 and state.h_constraints[r][c] != 0: degree += 1
-            if r > 0 and state.v_constraints[r - 1][c] != 0: degree += 1
-            if r < state.N - 1 and state.v_constraints[r][c] != 0: degree += 1
-            
-            return (domain_size, -degree)
-
-        return min(empty_cells, key=mrv_degree_key)
+        return empty_cells[0] if empty_cells else None
