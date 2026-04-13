@@ -16,9 +16,8 @@ class ForwardChainingSolver:
         self.num_inferences = 0
         start = time.perf_counter()
 
-        # Chạy propagation ban đầu từ các clue đã biết
         init_state = self.initial_state.clone()
-        ok, _ = init_state.propagate()
+        ok, _ = self._propagate(init_state)
         if not ok:
             self.elapsed = time.perf_counter() - start
             return None
@@ -31,7 +30,6 @@ class ForwardChainingSolver:
         if self.stop_event and self.stop_event.is_set():
             return None
         self.nodes_expanded += 1
-        # Base case
         if current_state.is_complete():
             return current_state
         empty_cells: List[Tuple[int, int]] = current_state.get_empty_cells()
@@ -41,7 +39,7 @@ class ForwardChainingSolver:
                 self.num_inferences += 1
                 new_state = current_state.assign_value(r, c, v)
 
-                ok, _ = new_state.propagate()
+                ok, _ = self._propagate(new_state)
                 if not ok:
                     continue
 
@@ -61,3 +59,25 @@ class ForwardChainingSolver:
             if not goal():
                 return False
         return True
+
+    def _propagate(self, state: 'State') -> Tuple[bool, List[Tuple[int, int, int]]]:
+        """Forward chaining: prune + unit-propagate until fixed point."""
+        derived: List[Tuple[int, int, int]] = []
+        changed = True
+        while changed:
+            changed = False
+            for r in range(state.N):
+                for c in range(state.N):
+                    if state.grid[r][c] != 0:
+                        continue
+                    new_domain = state.get_pruned_domain(r, c)
+                    if not new_domain:
+                        return False, derived
+                    if len(new_domain) < len(state.domains[r][c]):
+                        state.domains[r][c] = new_domain
+                        changed = True
+                    if len(new_domain) == 1:
+                        state.grid[r][c] = new_domain[0]
+                        derived.append((r, c, new_domain[0]))
+                        changed = True
+        return True, derived
