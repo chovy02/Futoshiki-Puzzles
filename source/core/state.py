@@ -208,25 +208,3 @@ class State:
                 if sign == 1:  return {v for v in domain if v < max(neighbor_domain)}
                 else:          return {v for v in domain if v > min(neighbor_domain)}
         return domain
-
-    def propagate(self) -> Tuple[bool, List[Tuple[int, int, int]]]:
-        """Run forward chaining: prune + unit-propagate until fixed point."""
-        derived: List[Tuple[int, int, int]] = []
-        changed = True
-        while changed:
-            changed = False
-            for r in range(self.N):
-                for c in range(self.N):
-                    if self.grid[r][c] != 0:
-                        continue
-                    new_domain = self.get_pruned_domain(r, c)
-                    if not new_domain:
-                        return False, derived
-                    if len(new_domain) < len(self.domains[r][c]):
-                        self.domains[r][c] = new_domain
-                        changed = True
-                    if len(new_domain) == 1:
-                        self.grid[r][c] = new_domain[0]
-                        derived.append((r, c, new_domain[0]))
-                        changed = True
-        return True, derived
