@@ -27,7 +27,15 @@ def _fmt_memory(peak_bytes: int) -> str:
 
 
 class GameScreen:
-    ALGORITHMS = ["Forward chaining", "Backward chaining", "PySAT", "Brute-force backtracking"]
+    ALGORITHMS = [
+    "Forward chaining",
+    "Backward chaining",
+    "PySAT",
+    "Brute-force backtracking",
+    "A* (h1: empty cells)",
+    "A* (h2: empty + chains)",
+    "A* (h3: AC-3)",
+]
 
     def __init__(self, app, size_name, difficulty, level, input_path):
         self.app = app
@@ -134,7 +142,16 @@ class GameScreen:
         elif self.algo == "Backward chaining":
             return BackwardChainingSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Brute-force backtracking":
-            return BruteForceBacktrackingSolver(self.original_state, stop_event=self.stop_event)    
+            return BruteForceBacktrackingSolver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "A* (h1: empty cells)":
+            from solvers.AStar1Solver import AStar1Solver
+            return AStar1Solver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "A* (h2: empty + chains)":
+            from solvers.AStar2Solver import AStar2Solver
+            return AStar2Solver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "A* (h3: AC-3)":
+            from solvers.AStar3Solver import AStar3Solver
+            return AStar3Solver(self.original_state, stop_event=self.stop_event)
         else:  # PySAT — lazy import so missing file won't crash on startup
             from solvers.pysat_solver import PySATSolver
             return PySATSolver(self.original_state)
