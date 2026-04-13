@@ -26,10 +26,7 @@ class BaseAStarSolver:
             for c in range(state.N):
                 if state.grid[r][c] == 0:
                     # Forward Checking
-                    valid_values = []
-                    for v in state.domains[r][c]:
-                        if state.is_valid_assignment(r, c, v):
-                            valid_values.append(v)
+                    valid_values = state.get_pruned_domain(r, c)
 
                     state.domains[r][c] = valid_values
                     valid_count = len(valid_values)

@@ -4,10 +4,10 @@ from solvers.BaseAStarSolver import BaseAStarSolver
 from core.state import State
 
 class AStar2Solver(BaseAStarSolver):
-    """1 * number of empty cells + 10 * number of empty cells involving inequality chains"""
+    """Number of empty cells related to inequality constraints"""
     def calculate_heuristic(self, state: 'State') -> float:
         count = 0
-        penalty = 10
+        penalty = 1
         N = state.N
         
         for r in range(N):
