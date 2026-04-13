@@ -47,26 +47,27 @@ class BaseAStarSolver:
         self.nodes_expanded = 0
         start = time.perf_counter()
 
-        # Priority queue (Min-heap), store (f(n), tie_breaker, g(n), state)
+        # Early goal test
+        if self.initial_state.is_complete():
+            self.elapsed = time.perf_counter() - start
+            return self.initial_state
+
+        # Priority queue (Min-heap), store (f(n), -g(n), tie breaker, state)
         pq = []
         tie_breaker = 0 # Used when f(n) is equal
 
         # Initialize root
         h_initial = self.calculate_heuristic(self.initial_state)
-        heapq.heappush(pq, (h_initial, tie_breaker, 0, self.initial_state))
+        heapq.heappush(pq, (h_initial, 0, tie_breaker, self.initial_state))
 
         while pq:
             # Cho phép Cancel từ GUI
             if self.stop_event is not None and self.stop_event.is_set():
                 self.elapsed = time.perf_counter() - start
                 return None
-            f, _, g, current_state = heapq.heappop(pq)
+            f, minus_g, _, current_state = heapq.heappop(pq)
+            g = -minus_g
             self.nodes_expanded += 1
-
-            # Base case
-            if current_state.is_complete():
-                self.elapsed = time.perf_counter() - start
-                return current_state
 
             # Apply MRV to get next cell
             next_cell = self._get_next_cell(current_state)
@@ -78,13 +79,18 @@ class BaseAStarSolver:
             for v in current_state.domains[r][c]:
                 if current_state.is_valid_assignment(r, c, v):
                     new_state = current_state.assign_value(r, c, v)
+                    # EARLY GOAL TEST
+                    if new_state.is_complete():
+                        self.nodes_expanded += 1
+                        self.elapsed = time.perf_counter() - start
+                        return new_state
                     g_new = g + 1
                     h_new = self.calculate_heuristic(new_state)
 
                     if h_new != math.inf:
                         f_new = g_new + h_new
                         tie_breaker += 1
-                        heapq.heappush(pq, (f_new, tie_breaker, g_new, new_state))
+                        heapq.heappush(pq, (f_new, -g_new, tie_breaker, new_state))
 
         self.elapsed = time.perf_counter() - start
         return None
