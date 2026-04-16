@@ -8,6 +8,8 @@ from .widgets import Button, draw_dotted_bg
 from utils.file_io import read_input_file
 from solvers.forward_chaining import ForwardChainingSolver
 from solvers.backward_chaining import BackwardChainingSolver
+from solvers.forward_chaining2 import ForwardChainingSolver2
+from solvers.backward_chaining2 import BackwardChainingSolver2
 from solvers.bruteForce_backtracking import BruteForceBacktrackingSolver
 
 
@@ -30,13 +32,14 @@ class GameScreen:
     ALGORITHMS = [
     "Forward chaining",
     "Backward chaining",
+    "Forward chaining (FOL)",
+    "Backward chaining (FOL)",
     "PySAT",
     "Brute-force backtracking",
     "A* (h1: empty cells)",
     "A* (h2: empty + chains)",
     "A* (h3: AC-3)",
-]
-
+    ]
     def __init__(self, app, size_name, difficulty, level, input_path):
         self.app = app
         self.size_name = size_name
@@ -141,6 +144,10 @@ class GameScreen:
             return ForwardChainingSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Backward chaining":
             return BackwardChainingSolver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "Forward chaining (FOL)":
+            return ForwardChainingSolver2(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "Backward chaining (FOL)":
+             return BackwardChainingSolver2(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Brute-force backtracking":
             return BruteForceBacktrackingSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "A* (h1: empty cells)":
@@ -165,7 +172,7 @@ class GameScreen:
         elapsed  = getattr(self.solver, 'elapsed', 0.0)
         nodes    = getattr(self.solver, 'nodes_expanded', 0)
         inferences = None
-        if self.algo in ("Forward chaining", "Backward chaining"):
+        if self.algo in ("Forward chaining", "Backward chaining", "Forward chaining (FOL)", "Backward chaining (FOL)"):
             inferences = getattr(self.solver, 'num_inferences', None)
 
         if gen == self.solve_gen:   # discard stale result if cancelled
@@ -509,7 +516,7 @@ class GameScreen:
         gap  = 8
         sh   = 58
         sw2  = (pw - gap) // 2
-        show_inf = self.algo in ("Forward chaining", "Backward chaining")
+        show_inf = self.algo in ("Forward chaining", "Backward chaining", "Forward chaining (FOL)", "Backward chaining (FOL)")
 
         # (Sau dòng vẽ auto_saved hoặc status_msg)
         
@@ -551,7 +558,7 @@ class GameScreen:
         y += sh + gap
 
         # Row 2: MEMORY | [INFERENCES hoặc STEPS]
-        if self.algo in ("Forward chaining", "Backward chaining"):
+        if self.algo in ("Forward chaining", "Backward chaining", "Forward chaining (FOL)", "Backward chaining (FOL)"):
             stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
             stat_box(bx+sw2+gap, y, sw2, "INFERENCES", inf_txt)
         elif self.algo == "Brute-force backtracking":

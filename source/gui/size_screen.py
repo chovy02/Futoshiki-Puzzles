@@ -57,7 +57,7 @@ class SizeScreen:
 
         # Game name - large
         name_font = th.get_font(64, bold=True)
-        name_surf = name_font.render("Futoshiki", True, th.TEXT_PRIMARY)
+        name_surf = name_font.render("Futoshiki Puzzle", True, th.TEXT_PRIMARY)
         name_surf.set_alpha(title_alpha)
         name_rect = name_surf.get_rect(center=(th.WINDOW_WIDTH // 2, 140 - title_offset))
         surface.blit(name_surf, name_rect)
