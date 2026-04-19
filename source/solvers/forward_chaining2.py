@@ -12,6 +12,7 @@ class ForwardChainingSolver2:
         self.nodes_expanded: int = 0
         self.num_inferences: int = 0
         self.num_initial_clauses: int = 0
+        self.total_number_of_clauses: int = 0
         self.elapsed: float = 0.0
         self.kb = build_futoshiki_kb(initial_state)
 
@@ -28,6 +29,7 @@ class ForwardChainingSolver2:
 
         result = self._sld_resolve(self.initial_state)
 
+        self.total_number_of_clauses = self.kb.count_clauses()
         self.num_inferences = self.kb.inference_count
         self.elapsed = time.perf_counter() - start
         return result
