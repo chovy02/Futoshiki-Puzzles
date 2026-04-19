@@ -57,6 +57,8 @@ class GameScreen:
         self.nodes_expanded = 0
         self.memory_peak = 0
         self.num_inferences = None
+        self.num_initial_clauses = None
+        self.total_number_of_clauses = None
         self.cell_anim = {}
 
         # Threading
@@ -175,15 +177,22 @@ class GameScreen:
         if self.algo in ("Forward chaining", "Backward chaining", "Forward chaining (FOL)", "Backward chaining (FOL)"):
             inferences = getattr(self.solver, 'num_inferences', None)
 
+        num_initial_clauses = None
+        total_number_of_clauses = None
+        if self.algo in ("Forward chaining (FOL)", "Backward chaining (FOL)"):
+            num_initial_clauses = getattr(self.solver, 'num_initial_clauses', None)
+            total_number_of_clauses = getattr(self.solver, 'total_number_of_clauses', None)
+
         if gen == self.solve_gen:   # discard stale result if cancelled
-            history = getattr(self.solver, 'history', []) # Lấy lịch sử ra
             self.thread_result = {
                 "result": result,
                 "elapsed": elapsed,
                 "nodes": nodes,
                 "memory_peak": peak,
                 "num_inferences": inferences,
-                "history": history # Trả lịch sử về
+                "num_initial_clauses": num_initial_clauses,
+                "total_number_of_clauses": total_number_of_clauses,
+                "history": getattr(self.solver, 'history', [])
             }
 
     def _solve(self):
@@ -222,6 +231,8 @@ class GameScreen:
         self.status_msg = ""
         self.is_stepping = False
         self.history_grids = []
+        self.num_initial_clauses = None
+        self.total_number_of_clauses = None
 
     def _save_output(self):
         out_dir = find_outputs_dir()
@@ -337,7 +348,8 @@ class GameScreen:
             self.nodes_expanded = self.thread_result["nodes"]
             self.memory_peak    = self.thread_result["memory_peak"]
             self.num_inferences = self.thread_result["num_inferences"]
-            self.history_grids  = self.thread_result.get("history", []) # Bắt lịch sử
+            self.num_initial_clauses = self.thread_result.get("num_initial_clauses", None)
+            self.total_number_of_clauses = self.thread_result.get("total_number_of_clauses", None)
 
             if res is None:
                 self.status_msg   = "No solution found"
@@ -568,6 +580,13 @@ class GameScreen:
             # Các thuật toán khác (như PySAT) sẽ để MEMORY tràn viền (full width)
             stat_box(bx, y, pw, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
         y += sh + gap
+        # Row 3: INIT CLAUSES | TOTAL CLAUSES (chỉ cho FOL)
+        if self.algo in ("Forward chaining (FOL)", "Backward chaining (FOL)"):
+            init_cl_txt = str(self.num_initial_clauses) if self.num_initial_clauses is not None else "—"
+            total_cl_txt = str(self.total_number_of_clauses) if self.total_number_of_clauses is not None else "—"
+            stat_box(bx,         y, sw2, "INIT CLAUSES", init_cl_txt)
+            stat_box(bx+sw2+gap, y, sw2, "TOTAL CLAUSES", total_cl_txt)
+            y += sh + gap
 
     def _draw_dropdown(self, surface):
         ar   = self.algo_rect
