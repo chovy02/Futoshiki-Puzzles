@@ -11,6 +11,7 @@ class ForwardChainingSolver2:
         self.stop_event = stop_event
         self.nodes_expanded: int = 0
         self.num_inferences: int = 0
+        self.num_initial_clauses: int = 0
         self.elapsed: float = 0.0
         self.kb = build_futoshiki_kb(initial_state)
 
@@ -21,7 +22,13 @@ class ForwardChainingSolver2:
 
         assert_initial_clues(self.kb, self.initial_state)
 
+        # Đo lường số lượng initial clauses
+        self.num_initial_clauses = self.kb.count_clauses()
+        self.kb.inference_count = 0  # Reset bộ đếm
+
         result = self._sld_resolve(self.initial_state)
+
+        self.num_inferences = self.kb.inference_count
         self.elapsed = time.perf_counter() - start
         return result
 
@@ -45,7 +52,6 @@ class ForwardChainingSolver2:
         for v in domain:
             # FORWARD CHAINING: derive ground facts, check Conflict(r,c,v) emerges?
             query = Predicate("Conflict", [r, c, v])
-            self.num_inferences += 1
             has_conflict = self.kb.fol_fc_ask(query)
 
             if not has_conflict:

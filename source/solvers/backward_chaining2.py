@@ -11,6 +11,7 @@ class BackwardChainingSolver2:
         self.stop_event = stop_event
         self.nodes_expanded: int = 0
         self.num_inferences: int = 0
+        self.num_initial_clauses: int = 0
         self.elapsed: float = 0.0
         self.kb = build_futoshiki_kb(initial_state)
 
@@ -20,8 +21,15 @@ class BackwardChainingSolver2:
         start = time.perf_counter()
 
         assert_initial_clues(self.kb, self.initial_state)
+
+        # Đo lường số lượng initial clauses sau khi nạp đủ Clues
+        self.num_initial_clauses = self.kb.count_clauses()
+        self.kb.inference_count = 0  # Reset bộ đếm trước khi chạy đệ quy
+
         # Chạy thuật toán Duyệt SLD
         result = self._sld_resolve(self.initial_state)
+
+        self.num_inferences = self.kb.inference_count
         self.elapsed = time.perf_counter() - start
         return result
 
@@ -45,7 +53,6 @@ class BackwardChainingSolver2:
             # ĐÂY LÀ ĐỈNH CAO CỦA BACKWARD CHAINING!
             # Truy vấn Knowledge Base: "Liệu có bằng chứng nào cho thấy điền v vào (r,c) là Xung đột không?"
             query = Predicate("Conflict", [r, c, v])
-            self.num_inferences += 1
             has_conflict = False
             for _ in self.kb.fol_bc_ask(query):
                 has_conflict = True

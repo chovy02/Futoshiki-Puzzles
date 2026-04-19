@@ -84,6 +84,7 @@ class FOLKnowledgeBase:
         self.facts: Dict[str, List[Predicate]] = defaultdict(list)
         self.rules: Dict[str, List[Rule]] = defaultdict(list)
         self._standardize_counter = 0
+        self.inference_count = 0
 
     def add_fact(self, fact: Predicate):
         self.facts[fact.name].append(fact)
@@ -105,6 +106,12 @@ class FOLKnowledgeBase:
         for rule in self.rules.get(goal.name, []):
             matching_rules.append(rule)
         return matching_rules
+    
+    def count_clauses(self) -> int:
+        """Return the total number of facts and rules in KB."""
+        fact_count = sum(len(f_list) for f_list in self.facts.values())
+        rule_count = sum(len(r_list) for r_list in self.rules.values())
+        return fact_count + rule_count
 
     # =========================================================
     # BACKWARD CHAINING (giữ nguyên)
@@ -117,11 +124,16 @@ class FOLKnowledgeBase:
     def fol_bc_or(self, goal: Predicate, theta: Theta) -> Generator[Theta, None, None]:
         is_ground = all(not isinstance(arg, str) for arg in goal.args)
         if is_ground and goal.name in ["Less", "Constraint"]:
+            self.inference_count += 1 
             found = any(goal.args == fact.args for fact in self.facts.get(goal.name, []))
-            if not found:
+            if found:
+                yield theta
+                return
+            else:
                 return
 
         for rule in self.fetch_rules_for_goal(goal):
+            self.inference_count += 1
             self._standardize_counter += 1
             std_rule = rule.standardize_variables(self._standardize_counter)
             
@@ -170,6 +182,7 @@ class FOLKnowledgeBase:
 
         try:
             # 1. Kiểm tra query có khớp với fact sẵn có không
+            self.inference_count += 1
             for fact in self.facts.get(query.name, []):
                 if unify(query, fact, {}) is not None:
                     return True
@@ -185,6 +198,7 @@ class FOLKnowledgeBase:
 
                         # Tìm tất cả θ thỏa body
                         for theta in self._satisfy_body(std_rule.body, {}):
+                            self.inference_count += 1
                             q_prime = std_rule.head.substitute(theta)
 
                             # Range restriction: chỉ giữ ground facts
