@@ -40,15 +40,21 @@ class Rule:
         if not body_str:
             return str(self.head)
         return f"{self.head} :- {body_str}"
-    
+
+
+def _is_variable(x: Any) -> bool:
+    """A variable is a non-empty lowercase string."""
+    return isinstance(x, str) and len(x) > 0 and x[0].islower()
+
+
 def unify(x: Any, y: Any, theta: Optional[Theta]) -> Optional[Theta]:
     if theta is None:
         return None
     elif x == y:
         return theta
-    elif isinstance(x, str) and x.islower():  # Nếu x là Biến (viết thường)
+    elif _is_variable(x):
         return unify_var(x, y, theta)
-    elif isinstance(y, str) and y.islower():  # Nếu y là Biến
+    elif _is_variable(y):
         return unify_var(y, x, theta)
     elif isinstance(x, Predicate) and isinstance(y, Predicate):
         if x.name != y.name or len(x.args) != len(y.args):
@@ -61,15 +67,17 @@ def unify(x: Any, y: Any, theta: Optional[Theta]) -> Optional[Theta]:
     else:
         return None
 
+
 def unify_var(var: str, x: Any, theta: Theta) -> Optional[Theta]:
     if var in theta:
         return unify(theta[var], x, theta)
-    elif isinstance(x, str) and x.islower() and x in theta:
+    elif _is_variable(x) and x in theta:
         return unify(var, theta[x], theta)
     else:
         new_theta = theta.copy()
         new_theta[var] = x
         return new_theta
+
 
 class FOLKnowledgeBase:
     def __init__(self):
@@ -91,7 +99,6 @@ class FOLKnowledgeBase:
     def fetch_rules_for_goal(self, goal: Predicate) -> List[Rule]:
         """Lấy tất cả các luật và facts có Head khớp với tên của Goal."""
         matching_rules = []
-        # Chuyển các fact thành Rule với body rỗng: Fact :- T
         for fact in self.facts.get(goal.name, []):
             matching_rules.append(Rule(fact, []))
 
@@ -100,7 +107,7 @@ class FOLKnowledgeBase:
         return matching_rules
 
     # =========================================================
-    # PSEUDO-CODE IMPLEMENTATION
+    # BACKWARD CHAINING (giữ nguyên)
     # =========================================================
 
     def fol_bc_ask(self, query: Predicate) -> Generator[Theta, None, None]:
@@ -108,43 +115,138 @@ class FOLKnowledgeBase:
         yield from self.fol_bc_or(query, {})
 
     def fol_bc_or(self, goal: Predicate, theta: Theta) -> Generator[Theta, None, None]:
-        """generator FOL-BC-OR(KB,goal, θ) yields a substitution"""
-
-        # [PRUNING TỐI ƯU]: Check Ground Goal Fail-fast
-        # Nếu goal không có biến (tất cả args là số), và nó là một Static Fact (như Less), 
-        # mà nó không nằm trong KB -> Cắt nhánh ngay lập tức!
         is_ground = all(not isinstance(arg, str) for arg in goal.args)
         if is_ground and goal.name in ["Less", "Constraint"]:
-            # So sánh string trực tiếp cho lẹ, bỏ qua Unify đắt đỏ
             found = any(goal.args == fact.args for fact in self.facts.get(goal.name, []))
             if not found:
-                return # Cắt nhánh (Pruned!)
-            
+                return
+
         for rule in self.fetch_rules_for_goal(goal):
-            # (lhs, rhs) <- STANDARDIZE-VARIABLES((lhs, rhs))
             self._standardize_counter += 1
             std_rule = rule.standardize_variables(self._standardize_counter)
             
-            lhs = std_rule.body  # Body của Horn clause
-            rhs = std_rule.head  # Head của Horn clause
+            lhs = std_rule.body
+            rhs = std_rule.head
 
-            # for each θ’ in FOL-BC-AND(KB, lhs, UNIFY(rhs, goal, θ)) do
             unify_theta = unify(rhs, goal, theta)
             if unify_theta is not None:
                 yield from self.fol_bc_and(lhs, unify_theta)
 
     def fol_bc_and(self, goals: List[Predicate], theta: Optional[Theta]) -> Generator[Theta, None, None]:
-        """generator FOL-BC-AND(KB,goals, θ) yields a substitution"""
-        if theta is None:  # if θ = failure then return
+        if theta is None:
             return
-        elif len(goals) == 0:  # else if LENGTH(goals) = 0 then yield θ
+        elif len(goals) == 0:
             yield theta
-        else:  # else do
+        else:
             first = goals[0]
             rest = goals[1:]
             
-            # for each θ’ in FOL-BC-OR(KB, SUBST(θ, first), θ) do
             subst_first = first.substitute(theta)
             for theta_prime in self.fol_bc_or(subst_first, theta):
-                # for each θ’’ in FOL-BC-AND(KB, rest, θ’) do
                 yield from self.fol_bc_and(rest, theta_prime)
+
+    # =========================================================
+    # FORWARD CHAINING (mới)
+    # =========================================================
+
+    def fol_fc_ask(self, query: Predicate, max_iter: int = 50) -> bool:
+        """
+        FOL-FC-ASK (AIMA): Suy dẫn tiến.
+        Lặp đi lặp lại: với mỗi rule, tìm các substitution θ thỏa toàn bộ body
+        bằng các fact hiện có trong KB, rồi sinh ra fact mới = SUBST(θ, head).
+        Dừng khi:
+            - Có fact mới khớp (unify được) với query  ->  trả về True
+            - Không còn fact mới nào được sinh ra      ->  trả về False
+
+        Lưu ý: rule phải "range-restricted" - mọi biến trong head phải xuất
+        hiện trong body - thì FC mới sinh được fact ground. Các fact không
+        ground (còn biến) sẽ bị bỏ qua.
+
+        KB được snapshot trước khi chạy và khôi phục sau khi xong, để các
+        fact derive ra trong lần query này không rò rỉ qua lần query kế.
+        """
+        # Snapshot facts hiện tại
+        snapshot = {k: list(v) for k, v in self.facts.items()}
+
+        try:
+            # 1. Kiểm tra query có khớp với fact sẵn có không
+            for fact in self.facts.get(query.name, []):
+                if unify(query, fact, {}) is not None:
+                    return True
+
+            # 2. Lặp suy dẫn tiến
+            for _ in range(max_iter):
+                new_facts: List[Predicate] = []
+
+                for rules_list in list(self.rules.values()):
+                    for rule in rules_list:
+                        self._standardize_counter += 1
+                        std_rule = rule.standardize_variables(self._standardize_counter)
+
+                        # Tìm tất cả θ thỏa body
+                        for theta in self._satisfy_body(std_rule.body, {}):
+                            q_prime = std_rule.head.substitute(theta)
+
+                            # Range restriction: chỉ giữ ground facts
+                            if not self._is_ground(q_prime):
+                                continue
+
+                            # Bỏ qua fact đã biết / đã sinh trong vòng này
+                            if self._fact_exists(q_prime):
+                                continue
+                            if self._fact_in_list(q_prime, new_facts):
+                                continue
+
+                            new_facts.append(q_prime)
+
+                            # Khớp query?
+                            if unify(q_prime, query, {}) is not None:
+                                # Add hết new_facts để giữ tính nhất quán rồi trả True
+                                for f in new_facts:
+                                    self.add_fact(f)
+                                return True
+
+                # Không sinh được fact mới -> không entail
+                if not new_facts:
+                    return False
+
+                # Bổ sung fact mới vào KB rồi lặp tiếp
+                for f in new_facts:
+                    self.add_fact(f)
+
+            return False
+        finally:
+            # Khôi phục KB về trạng thái ban đầu
+            self.facts = defaultdict(list)
+            for k, v in snapshot.items():
+                self.facts[k] = v
+
+    def _satisfy_body(self, body: List[Predicate], theta: Theta) -> Generator[Theta, None, None]:
+        """Sinh ra mọi θ làm cho toàn bộ body khớp với facts trong KB."""
+        if not body:
+            yield theta
+            return
+        first = body[0].substitute(theta)
+        for fact in self.facts.get(first.name, []):
+            new_theta = unify(first, fact, dict(theta))
+            if new_theta is not None:
+                yield from self._satisfy_body(body[1:], new_theta)
+
+    def _is_ground(self, pred: Predicate) -> bool:
+        """Predicate là ground khi không còn biến nào (chữ thường)."""
+        for arg in pred.args:
+            if _is_variable(arg):
+                return False
+        return True
+
+    def _fact_exists(self, pred: Predicate) -> bool:
+        for f in self.facts.get(pred.name, []):
+            if pred.args == f.args:
+                return True
+        return False
+
+    def _fact_in_list(self, pred: Predicate, fact_list: List[Predicate]) -> bool:
+        for f in fact_list:
+            if pred.name == f.name and pred.args == f.args:
+                return True
+        return False
