@@ -30,8 +30,15 @@ class ForwardChainingSolver:
         if self.stop_event and self.stop_event.is_set():
             return None
         self.nodes_expanded += 1
+
+        # [LOG 1]: In tiến độ mỗi 1000 nodes để biết code vẫn đang chạy, không bị treo cứng.
+        if self.nodes_expanded % 1000 == 0:
+            empty_count = len(current_state.get_empty_cells())
+            print(f"[SLD_Resolve] Đang tìm kiếm... Đã mở rộng: {self.nodes_expanded} nodes | Số ô trống hiện tại: {empty_count}")
+
         if current_state.is_complete():
             return current_state
+        
         empty_cells: List[Tuple[int, int]] = current_state.get_empty_cells()
         r, c = empty_cells[0]
         for v in current_state.domains[r][c]:
@@ -64,7 +71,12 @@ class ForwardChainingSolver:
         """Forward chaining: prune + unit-propagate until fixed point."""
         derived: List[Tuple[int, int, int]] = []
         changed = True
+        pass_count = 0  # Thêm biến đếm số vòng lặp
         while changed:
+            pass_count += 1
+            # [LOG 2]: Nếu lặp quá 50 lần cho 1 state thì chắc chắn có vấn đề logic ở get_pruned_domain
+            if pass_count > 50:
+                print(f"[CẢNH BÁO] Propagate bị lặp {pass_count} vòng! Buộc dừng để chống treo máy.")
             changed = False
             for r in range(state.N):
                 for c in range(state.N):
