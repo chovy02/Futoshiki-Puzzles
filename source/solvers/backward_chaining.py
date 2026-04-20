@@ -64,10 +64,22 @@ class BackwardChainingSolver:
                 self.kb.add_fact(Predicate("Val", [r, c, v]))
                 new_state = current_state.assign_value(r, c, v)
 
-                result = self._sld_resolve(new_state)
-                if result is not None:
-                    return result
+                if self._forward_check(new_state):
+                    result = self._sld_resolve(new_state)
+                    if result is not None:
+                        return result
                 # 3. Rút lui (Retract) - Tháo sự thật ra khỏi KB để quay lui (Backtracking)
                 self.kb.retract_fact("Val")
 
-        return None
+        return None   
+               
+    def _forward_check(self, state: 'State') -> bool:
+        """Prune domain tất cả ô trống. Trả False nếu có ô nào domain rỗng."""
+        for r in range(state.N):
+            for c in range(state.N):
+                if state.grid[r][c] == 0:
+                    new_domain = state.get_pruned_domain(r, c)
+                    if not new_domain:
+                        return False
+                    state.domains[r][c] = new_domain
+        return True
