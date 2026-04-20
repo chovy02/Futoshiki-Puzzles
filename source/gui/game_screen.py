@@ -350,6 +350,7 @@ class GameScreen:
             self.num_inferences = self.thread_result["num_inferences"]
             self.num_initial_clauses = self.thread_result.get("num_initial_clauses", None)
             self.total_number_of_clauses = self.thread_result.get("total_number_of_clauses", None)
+            self.history_grids = self.thread_result.get("history", [])
 
             if res is None:
                 self.status_msg   = "No solution found"
