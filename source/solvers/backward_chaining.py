@@ -2,7 +2,7 @@ import time
 from typing import Optional
 from core.state import State
 from core.fol_logic import Predicate
-from solvers.futoshiki_fol_kb import build_futoshiki_kb, assert_initial_clues
+from solvers.futoshiki_kb import build_futoshiki_kb, assert_initial_clues
 
 
 class BackwardChainingSolver:
