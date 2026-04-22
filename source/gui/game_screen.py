@@ -9,6 +9,7 @@ from utils.file_io import read_input_file
 from solvers.forward_chaining import ForwardChainingSolver
 from solvers.backward_chaining import BackwardChainingSolver
 from solvers.bruteForce_backtracking import BruteForceBacktrackingSolver
+from solvers.forward_chaining_tms import ForwardChainingTMSSolver
 
 
 def find_outputs_dir():
@@ -29,6 +30,7 @@ def _fmt_memory(peak_bytes: int) -> str:
 class GameScreen:
     ALGORITHMS = [
     "Forward chaining",
+    "Forward chaining (TMS)",
     "Backward chaining",
     "PySAT",
     "Brute-force backtracking",
@@ -140,6 +142,8 @@ class GameScreen:
         """Instantiate the correct solver. PySAT imported lazily."""
         if self.algo == "Forward chaining":
             return ForwardChainingSolver(self.original_state, stop_event=self.stop_event)
+        elif self.algo == "Forward chaining (TMS)":     
+            return ForwardChainingTMSSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Backward chaining":
             return BackwardChainingSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Brute-force backtracking":
@@ -168,7 +172,8 @@ class GameScreen:
         inferences = None
         num_initial_clauses = None
         total_number_of_clauses = None
-        if self.algo in ("Forward chaining", "Backward chaining"):
+
+        if self.algo in ("Forward chaining", "Forward chaining (TMS)", "Backward chaining"):
             inferences = getattr(self.solver, 'num_inferences', None)
             num_initial_clauses = getattr(self.solver, 'num_initial_clauses', None)
             total_number_of_clauses = getattr(self.solver, 'total_number_of_clauses', None)
@@ -519,7 +524,7 @@ class GameScreen:
         gap  = 8
         sh   = 58
         sw2  = (pw - gap) // 2
-        show_inf = self.algo in ("Forward chaining", "Backward chaining", "Forward chaining (FOL)", "Backward chaining (FOL)")
+        show_inf = self.algo in ("Forward chaining", "Forward chaining (TMS)", "Backward chaining")
 
         # (Sau dòng vẽ auto_saved hoặc status_msg)
         
@@ -561,7 +566,7 @@ class GameScreen:
         y += sh + gap
 
         # Row 2: MEMORY | [INFERENCES hoặc STEPS]
-        if self.algo in ("Forward chaining", "Backward chaining"):
+        if self.algo in ("Forward chaining", "Forward chaining (TMS)", "Backward chaining"):
             stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
             stat_box(bx+sw2+gap, y, sw2, "INFERENCES", inf_txt)
             y += sh + gap
