@@ -169,6 +169,7 @@ class GameScreen:
         num_initial_clauses = None
         total_number_of_clauses = None
         if self.algo in ("Forward chaining", "Backward chaining"):
+            inferences = getattr(self.solver, 'num_inferences', None)
             num_initial_clauses = getattr(self.solver, 'num_initial_clauses', None)
             total_number_of_clauses = getattr(self.solver, 'total_number_of_clauses', None)
 
