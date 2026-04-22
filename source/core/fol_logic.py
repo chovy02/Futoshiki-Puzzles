@@ -1,4 +1,4 @@
-from typing import List, Dict, Any, Generator, Optional
+from typing import List, Dict, Any, Generator, Optional, Tuple
 from collections import defaultdict
 
 # Substitution Theta is a dictionary mapping Variable -> Value
@@ -12,16 +12,21 @@ class Predicate:
     def __repr__(self):
         args_str = ", ".join(map(str, self.args))
         return f"{self.name}({args_str})"
-    
+
     def substitute(self, theta: Theta) -> 'Predicate':
         """Subtitution to generate a new sentence"""
         new_args = [theta.get(arg, arg) if isinstance(arg, str) else arg for arg in self.args]
         return Predicate(self.name, new_args)
-    
+
+    def to_key(self) -> Tuple:
+        """Hashable identity key for a ground predicate. Used by TMS."""
+        return (self.name, tuple(self.args))
+
+
 class Rule:
     def __init__(self, head: Predicate, body: List[Predicate]):
-        self.head = head # Goal needs to be proved
-        self.body = body # List of conditions
+        self.head = head
+        self.body = body
 
     def standardize_variables(self, suffix: int) -> 'Rule':
         """Rename variables to avoid collision"""
@@ -30,11 +35,10 @@ class Rule:
             for arg in b.args:
                 if isinstance(arg, str) and arg not in theta:
                     theta[arg] = f"{arg}_{suffix}"
-
         new_head = self.head.substitute(theta)
         new_body = [b.substitute(theta) for b in self.body]
         return Rule(new_head, new_body)
-    
+
     def __repr__(self):
         body_str = " ^ ".join(map(str, self.body))
         if not body_str:
@@ -102,11 +106,10 @@ class FOLKnowledgeBase:
         matching_rules = []
         for fact in self.facts.get(goal.name, []):
             matching_rules.append(Rule(fact, []))
-
         for rule in self.rules.get(goal.name, []):
             matching_rules.append(rule)
         return matching_rules
-    
+
     def count_clauses(self) -> int:
         """Return the total number of facts and rules in KB."""
         fact_count = sum(len(f_list) for f_list in self.facts.values())
@@ -124,7 +127,7 @@ class FOLKnowledgeBase:
     def fol_bc_or(self, goal: Predicate, theta: Theta) -> Generator[Theta, None, None]:
         is_ground = all(not isinstance(arg, str) for arg in goal.args)
         if is_ground and goal.name in ["Less", "Constraint"]:
-            self.inference_count += 1 
+            self.inference_count += 1
             found = any(goal.args == fact.args for fact in self.facts.get(goal.name, []))
             if found:
                 yield theta
@@ -136,10 +139,8 @@ class FOLKnowledgeBase:
             self.inference_count += 1
             self._standardize_counter += 1
             std_rule = rule.standardize_variables(self._standardize_counter)
-            
             lhs = std_rule.body
             rhs = std_rule.head
-
             unify_theta = unify(rhs, goal, theta)
             if unify_theta is not None:
                 yield from self.fol_bc_and(lhs, unify_theta)
@@ -152,42 +153,28 @@ class FOLKnowledgeBase:
         else:
             first = goals[0]
             rest = goals[1:]
-            
             subst_first = first.substitute(theta)
             for theta_prime in self.fol_bc_or(subst_first, theta):
                 yield from self.fol_bc_and(rest, theta_prime)
 
     # =========================================================
-    # FORWARD CHAINING (mới)
+    # FORWARD CHAINING (snapshot/restore — giữ nguyên)
     # =========================================================
 
     def fol_fc_ask(self, query: Predicate, max_iter: int = 50) -> bool:
         """
-        FOL-FC-ASK (AIMA): Suy dẫn tiến.
-        Lặp đi lặp lại: với mỗi rule, tìm các substitution θ thỏa toàn bộ body
-        bằng các fact hiện có trong KB, rồi sinh ra fact mới = SUBST(θ, head).
-        Dừng khi:
-            - Có fact mới khớp (unify được) với query  ->  trả về True
-            - Không còn fact mới nào được sinh ra      ->  trả về False
-
-        Lưu ý: rule phải "range-restricted" - mọi biến trong head phải xuất
-        hiện trong body - thì FC mới sinh được fact ground. Các fact không
-        ground (còn biến) sẽ bị bỏ qua.
-
-        KB được snapshot trước khi chạy và khôi phục sau khi xong, để các
-        fact derive ra trong lần query này không rò rỉ qua lần query kế.
+        FOL-FC-ASK (AIMA): Suy dẫn tiến với snapshot/restore.
+        KB được snapshot trước khi chạy và khôi phục sau khi xong.
+        Xem forward_chaining_tms.py để dùng phiên bản TMS không snapshot.
         """
-        # Snapshot facts hiện tại
         snapshot = {k: list(v) for k, v in self.facts.items()}
 
         try:
-            # 1. Kiểm tra query có khớp với fact sẵn có không
             self.inference_count += 1
             for fact in self.facts.get(query.name, []):
                 if unify(query, fact, {}) is not None:
                     return True
 
-            # 2. Lặp suy dẫn tiến
             for _ in range(max_iter):
                 new_facts: List[Predicate] = []
 
@@ -196,16 +183,12 @@ class FOLKnowledgeBase:
                         self._standardize_counter += 1
                         std_rule = rule.standardize_variables(self._standardize_counter)
 
-                        # Tìm tất cả θ thỏa body
                         for theta in self._satisfy_body(std_rule.body, {}):
                             self.inference_count += 1
                             q_prime = std_rule.head.substitute(theta)
 
-                            # Range restriction: chỉ giữ ground facts
                             if not self._is_ground(q_prime):
                                 continue
-
-                            # Bỏ qua fact đã biết / đã sinh trong vòng này
                             if self._fact_exists(q_prime):
                                 continue
                             if self._fact_in_list(q_prime, new_facts):
@@ -213,30 +196,24 @@ class FOLKnowledgeBase:
 
                             new_facts.append(q_prime)
 
-                            # Khớp query?
                             if unify(q_prime, query, {}) is not None:
-                                # Add hết new_facts để giữ tính nhất quán rồi trả True
                                 for f in new_facts:
                                     self.add_fact(f)
                                 return True
 
-                # Không sinh được fact mới -> không entail
                 if not new_facts:
                     return False
 
-                # Bổ sung fact mới vào KB rồi lặp tiếp
                 for f in new_facts:
                     self.add_fact(f)
 
             return False
         finally:
-            # Khôi phục KB về trạng thái ban đầu
             self.facts = defaultdict(list)
             for k, v in snapshot.items():
                 self.facts[k] = v
 
     def _satisfy_body(self, body: List[Predicate], theta: Theta) -> Generator[Theta, None, None]:
-        """Sinh ra mọi θ làm cho toàn bộ body khớp với facts trong KB."""
         if not body:
             yield theta
             return
@@ -247,7 +224,6 @@ class FOLKnowledgeBase:
                 yield from self._satisfy_body(body[1:], new_theta)
 
     def _is_ground(self, pred: Predicate) -> bool:
-        """Predicate là ground khi không còn biến nào (chữ thường)."""
         for arg in pred.args:
             if _is_variable(arg):
                 return False
