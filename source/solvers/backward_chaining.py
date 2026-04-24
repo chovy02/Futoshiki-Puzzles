@@ -72,22 +72,25 @@ class BackwardChainingSolver:
                 has_conflict = True
                 break
 
-            if not has_conflict:
-                fact = Predicate("Val", [r, c, v])
-                self.kb.add_fact(fact)
-                new_state = current_state.assign_value(r, c, v)
+            if has_conflict:
+                self._log(f"! CONFLICT Val({r},{c},{v}) — skipped")
+                continue
 
-                # Log fact mới được thêm
-                self._log(f"+ ASSERT  {fact}")
+            fact = Predicate("Val", [r, c, v])
+            self.kb.add_fact(fact)
+            new_state = current_state.assign_value(r, c, v)
 
-                if self._forward_check(new_state):
-                    result = self._sld_resolve(new_state)
-                    if result is not None:
-                        return result
+            # Log fact mới được thêm
+            self._log(f"+ ASSERT  {fact}")
 
-                # Log backtrack
-                self._log(f"- RETRACT {fact}")
-                self.kb.retract_fact("Val")
+            if self._forward_check(new_state):
+                result = self._sld_resolve(new_state)
+                if result is not None:
+                    return result
+
+            # Log backtrack
+            self._log(f"- RETRACT {fact}")
+            self.kb.retract_fact("Val")
 
         return None
 
