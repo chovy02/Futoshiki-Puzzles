@@ -355,8 +355,6 @@ class ForwardChainingTMSSolver:
         self.num_initial_clauses = self.kb.count_clauses()
         self.kb.inference_count  = 0
 
-        self._log_initial_kb()
-
         result = self._sld_resolve(self.initial_state)
 
         self.total_number_of_clauses = self.kb.count_clauses()

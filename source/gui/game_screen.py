@@ -619,8 +619,8 @@ class GameScreen:
             surface.blit(empty_surf, (x + 10, y + log_h // 2 - empty_surf.get_height() // 2))
             return
 
-        line_font = th.get_font(10)
-        line_h    = line_font.get_height() + 2
+        line_font = th.get_font(13)
+        line_h    = line_font.get_height() + 4
         visible   = log_h // line_h
 
         # Clamp scroll

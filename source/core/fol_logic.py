@@ -89,6 +89,7 @@ class FOLKnowledgeBase:
         self.rules: Dict[str, List[Rule]] = defaultdict(list)
         self._standardize_counter = 0
         self.inference_count = 0
+        self.log_func = None 
 
     def add_fact(self, fact: Predicate):
         self.facts[fact.name].append(fact)
@@ -184,6 +185,7 @@ class FOLKnowledgeBase:
         # Snapshot facts hiện tại
         snapshot = {k: list(v) for k, v in self.facts.items()}
 
+        added_inferred_facts = []  
         try:
             # 1. Kiểm tra query có khớp với fact sẵn có không
             self.inference_count += 1
@@ -222,6 +224,9 @@ class FOLKnowledgeBase:
                                 # Add hết new_facts để giữ tính nhất quán rồi trả True
                                 for f in new_facts:
                                     self.add_fact(f)
+                                    added_inferred_facts.append(f)
+                                    if self.log_func:
+                                        self.log_func(f"+ ASSERT  {f} (inferred)")
                                 return True
 
                 # Không sinh được fact mới -> không entail
@@ -231,9 +236,17 @@ class FOLKnowledgeBase:
                 # Bổ sung fact mới vào KB rồi lặp tiếp
                 for f in new_facts:
                     self.add_fact(f)
+                    added_inferred_facts.append(f)
+                    if self.log_func:
+                        self.log_func(f"+ ASSERT  {f} (inferred)")
 
             return False
         finally:
+            # <--- IN RA LOG DỌN DẸP TRƯỚC KHI KHÔI PHỤC SNAPSHOT
+            if self.log_func:
+                for f in reversed(added_inferred_facts):
+                    self.log_func(f"- RETRACT {f} (discarded)")
+
             # Khôi phục KB về trạng thái ban đầu
             self.facts = defaultdict(list)
             for k, v in snapshot.items():

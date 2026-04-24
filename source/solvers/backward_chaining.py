@@ -23,15 +23,6 @@ class BackwardChainingSolver:
     def _log(self, line: str) -> None:
         self.kb_log_lines.append(line)
 
-    def _log_initial_kb(self) -> None:
-        """Log KB ban đầu 1 lần duy nhất trước khi bắt đầu tìm kiếm."""
-        self._log("=== INITIAL KB ===")
-        for name, fact_list in sorted(self.kb.facts.items()):
-            if fact_list:
-                self._log(f"[{name}] ({len(fact_list)})")
-                for f in fact_list:
-                    self._log(f"  {f}")
-        self._log("")
 
     # KB wrappers
     def _assert_fact(self, fact: Predicate) -> None:
@@ -54,7 +45,6 @@ class BackwardChainingSolver:
         self.num_initial_clauses = self.kb.count_clauses()
         self.kb.inference_count = 0
 
-        self._log_initial_kb()
 
         result = self._sld_resolve(self.initial_state)
 
