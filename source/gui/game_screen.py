@@ -30,6 +30,14 @@ def _fmt_memory(peak_bytes: int) -> str:
 # Algorithms that produce a KB log
 _LOG_ALGOS = ("Forward chaining", "Forward chaining (TMS)", "Backward chaining")
 
+# Algorithms that support step-by-step node expansion view
+_STEP_ALGOS = (
+    "Brute-force backtracking",
+    "A* (h1: empty cells)",
+    "A* (h2: empty + chains)",
+    "A* (h3: AC-3)",
+)
+
 
 class GameScreen:
     ALGORITHMS = [
@@ -384,7 +392,7 @@ class GameScreen:
                         if self.original_state.grid[r][c] == 0 and self.state.grid[r][c] != 0:
                             self.cell_anim[(r, c)] = 0.0
 
-            if self.history_grids and self.algo == "Brute-force backtracking":
+            if self.history_grids and self.algo in _STEP_ALGOS:
                 self.is_stepping = True
                 self.step_idx = len(self.history_grids) - 1
                 self.state.grid = [row[:] for row in self.history_grids[self.step_idx]]
@@ -551,7 +559,8 @@ class GameScreen:
         if getattr(self, 'is_stepping', False):
             self.prev_btn.draw(surface)
             self.next_btn.draw(surface)
-            step_text = f"Step: {self.step_idx + 1} / {len(self.history_grids)}"
+            label = "Node" if self.algo in _STEP_ALGOS and self.algo != "Brute-force backtracking" else "Step"
+            step_text = f"{label}: {self.step_idx + 1} / {len(self.history_grids)}"
             if len(self.history_grids) >= getattr(self.solver, 'MAX_HISTORY', 20000):
                 step_text += " (Maxed)"
             step_surf = th.get_font(12, bold=True).render(step_text, True, th.TEXT_SECONDARY)

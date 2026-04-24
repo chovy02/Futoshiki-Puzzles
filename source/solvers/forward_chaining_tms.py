@@ -300,11 +300,9 @@ class ForwardChainingTMSSolver:
         self.kb_log_lines.append(line)
 
     def _log_initial_kb(self) -> None:
-        """Log KB ban đầu 1 lần duy nhất trước khi bắt đầu tìm kiếm."""
-        self._log("=== INITIAL KB ===")
+        _SKIP = {"Cell", "Less"}
         for name, fact_list in sorted(self.kb.facts.items()):
-            if fact_list:
-                self._log(f"[{name}] ({len(fact_list)})")
+            if fact_list and name not in _SKIP: 
                 for f in fact_list:
                     self._log(f"  {f}")
         self._log("")
@@ -354,7 +352,7 @@ class ForwardChainingTMSSolver:
 
         self.num_initial_clauses = self.kb.count_clauses()
         self.kb.inference_count  = 0
-
+        self._log_initial_kb()
         result = self._sld_resolve(self.initial_state)
 
         self.total_number_of_clauses = self.kb.count_clauses()

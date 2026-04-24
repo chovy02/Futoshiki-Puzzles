@@ -13,6 +13,10 @@ class BaseAStarSolver:
         self.elapsed: float = 0.0
         self.stop_event = stop_event
 
+        # Step-by-step history — mỗi phần tử là snapshot grid tại 1 node được expand
+        self.history: List[List[List[int]]] = []
+        self.MAX_HISTORY = 100_000   # A* tốn RAM hơn BruteForce nên giới hạn thấp hơn
+
     def calculate_heuristic(self, state: 'State') -> float:
         """Abstract method"""
         raise NotImplementedError("Child class must define this method")
@@ -42,6 +46,7 @@ class BaseAStarSolver:
 
     def solve(self) -> Optional[State]:
         self.nodes_expanded = 0
+        self.history = []
         start = time.perf_counter()
 
         # Early goal test
@@ -66,6 +71,9 @@ class BaseAStarSolver:
             g = -minus_g
             self.nodes_expanded += 1
 
+            if len(self.history) < self.MAX_HISTORY:
+                self.history.append([row[:] for row in current_state.grid])
+
             # Apply MRV to get next cell
             next_cell = self._get_next_cell(current_state)
             if next_cell is None:
@@ -79,6 +87,8 @@ class BaseAStarSolver:
                     # EARLY GOAL TEST
                     if new_state.is_complete():
                         self.nodes_expanded += 1
+                        if len(self.history) < self.MAX_HISTORY:
+                            self.history.append([row[:] for row in new_state.grid])
                         self.elapsed = time.perf_counter() - start
                         return new_state
                     g_new = g + 1

@@ -24,6 +24,13 @@ class BackwardChainingSolver:
         self.kb_log_lines.append(line)
 
 
+    def _log_initial_kb(self) -> None:
+        _SKIP = {"Cell", "Less"}
+        for name, fact_list in sorted(self.kb.facts.items()):
+            if fact_list and name not in _SKIP: 
+                for f in fact_list:
+                    self._log(f"  {f}")
+        self._log("")
     # KB wrappers
     def _assert_fact(self, fact: Predicate) -> None:
         """Assert fact vào KB và log."""
@@ -47,6 +54,7 @@ class BackwardChainingSolver:
 
 
         result = self._sld_resolve(self.initial_state)
+        self._log_initial_kb()
 
         self.total_number_of_clauses = self.kb.count_clauses()
         self.num_inferences = self.kb.inference_count
