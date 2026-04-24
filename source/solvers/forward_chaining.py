@@ -1,5 +1,5 @@
 import time
-from typing import Optional
+from typing import Optional, List
 from core.state import State
 from core.fol_logic import Predicate
 from solvers.futoshiki_kb import build_futoshiki_kb, assert_initial_clues
@@ -16,6 +16,35 @@ class ForwardChainingSolver:
         self.elapsed: float = 0.0
         self.kb = build_futoshiki_kb(initial_state)
 
+        # KB log — GUI reads this list to display
+        self.kb_log_lines: List[str] = []
+
+    # Logging helpers
+    def _log(self, line: str) -> None:
+        self.kb_log_lines.append(line)
+
+    def _log_initial_kb(self) -> None:
+        """Log KB ban đầu 1 lần duy nhất trước khi bắt đầu tìm kiếm."""
+        self._log("=== INITIAL KB ===")
+        for name, fact_list in sorted(self.kb.facts.items()):
+            if fact_list:
+                self._log(f"[{name}] ({len(fact_list)})")
+                for f in fact_list:
+                    self._log(f"  {f}")
+        self._log("")
+
+    # KB wrappers
+    def _assert_fact(self, fact: Predicate) -> None:
+        """Assert fact vào KB và log."""
+        self.kb.add_fact(fact)
+        self._log(f"+ ASSERT  {fact}")
+
+    def _retract_fact(self, fact_name: str, fact: Predicate) -> None:
+        """Retract fact khỏi KB và log."""
+        self.kb.retract_fact(fact_name)
+        self._log(f"- RETRACT {fact}")
+
+    # Solve 
     def solve(self) -> Optional[State]:
         self.nodes_expanded = 0
         self.num_inferences = 0
@@ -27,6 +56,7 @@ class ForwardChainingSolver:
         self.num_initial_clauses = self.kb.count_clauses()
         self.kb.inference_count = 0  # Reset bộ đếm
 
+        self._log_initial_kb()
         result = self._sld_resolve(self.initial_state)
 
         self.total_number_of_clauses = self.kb.count_clauses()
@@ -57,7 +87,8 @@ class ForwardChainingSolver:
             has_conflict = self.kb.fol_fc_ask(query)
 
             if not has_conflict:
-                self.kb.add_fact(Predicate("Val", [r, c, v]))
+                fact = Predicate("Val", [r, c, v])
+                self._assert_fact(fact)
                 new_state = current_state.assign_value(r, c, v)
 
                 # Forward Checking: prune domain sau khi gán
@@ -66,7 +97,7 @@ class ForwardChainingSolver:
                     if result is not None:
                         return result
 
-                self.kb.retract_fact("Val")
+                self._retract_fact("Val", fact)
 
         return None
     

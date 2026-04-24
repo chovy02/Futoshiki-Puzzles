@@ -286,6 +286,35 @@ class ForwardChainingTMSSolver:
         self.elapsed:               float = 0.0
         self.kb: TMSKnowledgeBase         = self._build_kb(initial_state)
 
+        # KB log — GUI reads this list to display
+        self.kb_log_lines: List[str] = []
+
+    # Logging helpers
+    def _log(self, line: str) -> None:
+        self.kb_log_lines.append(line)
+
+    def _log_initial_kb(self) -> None:
+        """Log KB ban đầu 1 lần duy nhất trước khi bắt đầu tìm kiếm."""
+        self._log("=== INITIAL KB ===")
+        for name, fact_list in sorted(self.kb.facts.items()):
+            if fact_list:
+                self._log(f"[{name}] ({len(fact_list)})")
+                for f in fact_list:
+                    self._log(f"  {f}")
+        self._log("")
+
+    # KB wrappers
+    def _assert_fact(self, fact: Predicate) -> None:
+        """Assert Val fact vào KB (is_base=True) và log."""
+        self.kb.add_fact(fact, is_base=True)
+        self._log(f"+ ASSERT  {fact}")
+
+    def _retract_fact(self, fact_name: str, fact: Predicate) -> None:
+        """Retract fact khỏi KB (cascade TMS) và log."""
+        self.kb.retract_fact(fact_name)
+        self._log(f"- RETRACT {fact}")
+
+    # Build KB
     def _build_kb(self, initial_state: 'State') -> TMSKnowledgeBase:
         """
         Tái dùng build_futoshiki_kb() để lấy rules/facts,
@@ -308,6 +337,7 @@ class ForwardChainingTMSSolver:
 
         return tms_kb
 
+    # Solve 
     def solve(self) -> Optional[State]:
         self.nodes_expanded  = 0
         self.num_inferences  = 0
@@ -317,6 +347,8 @@ class ForwardChainingTMSSolver:
 
         self.num_initial_clauses = self.kb.count_clauses()
         self.kb.inference_count  = 0
+
+        self._log_initial_kb()
 
         result = self._sld_resolve(self.initial_state)
 
@@ -348,7 +380,8 @@ class ForwardChainingTMSSolver:
 
             if not has_conflict:
                 # Assert Val(r,c,v) là base fact
-                self.kb.add_fact(Predicate("Val", [r, c, v]), is_base=True)
+                fact = Predicate("Val", [r, c, v])
+                self._assert_fact(fact)
                 new_state = current_state.assign_value(r, c, v)
 
                 if self._forward_check(new_state):
@@ -358,7 +391,7 @@ class ForwardChainingTMSSolver:
 
                 # Backtrack: cascade-delete Val(r,c,v) và mọi
                 # inferred fact phụ thuộc vào nó
-                self.kb.retract_fact("Val")
+                self._retract_fact("Val", fact)
 
         return None
 
