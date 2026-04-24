@@ -75,6 +75,7 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
         super().__init__()
         # Dependency Graph: pred_key -> TMSNode
         self._tms: Dict[Tuple, TMSNode] = {}
+        self.log_func = None
 
     # ── Fact management ───────────────────────────────────────────────────
 
@@ -111,6 +112,8 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
                     self._tms[p_key].children.add(key)
 
         self.facts[fact.name].append(fact)
+        if not is_base and self.log_func:
+            self.log_func(f"+ ASSERT  {fact}")
 
     def retract_fact(self, fact_name: str) -> None:
         """
@@ -181,6 +184,9 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
                 f for f in self.facts.get(name, [])
                 if f.to_key() != del_key
             ]
+            if self.log_func and del_key != root_key:
+                args_str = ", ".join(map(str, del_key[1]))
+                self.log_func(f"- RETRACT {name}({args_str})")
 
     # ── Forward Chaining với TMS ──────────────────────────────────────────
 
@@ -324,6 +330,7 @@ class ForwardChainingTMSSolver:
 
         tms_kb = TMSKnowledgeBase()
         tms_kb._standardize_counter = base_kb._standardize_counter
+        tms_kb.log_func = self._log
 
         # Copy rules
         for rule_list in base_kb.rules.values():
