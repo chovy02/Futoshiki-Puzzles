@@ -13,7 +13,6 @@ class AStar2Solver(BaseAStarSolver):
         for r in range(N):
             for c in range(N):
                 if state.grid[r][c] == 0:
-                    count += 1
                     if c > 0 and state.h_constraints[r][c - 1] != 0: 
                         count += penalty
                     elif c < N - 1 and state.h_constraints[r][c] != 0: 

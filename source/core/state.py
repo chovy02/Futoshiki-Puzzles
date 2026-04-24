@@ -87,10 +87,6 @@ class State:
 
         print("-" * 20)
 
-    # =====
-    # PREDICATE
-    # =====
-
     def is_valid_assignment(self, r: int, c: int, v: int) -> bool:
         """Check whether an assignment is valid."""
         return (self.is_valid_row(r, v) and 
