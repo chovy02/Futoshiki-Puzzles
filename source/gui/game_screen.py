@@ -38,6 +38,10 @@ class GameScreen:
     "A* (h2: empty + chains)",
     "A* (h3: AC-3)",
     ]
+
+    # Height of KB log area (pixels)
+    _KB_LOG_H = 200
+
     def __init__(self, app, size_name, difficulty, level, input_path):
         self.app = app
         self.size_name = size_name
@@ -102,23 +106,26 @@ class GameScreen:
         self.history_grids = []
         self.step_idx = 0
         self.is_stepping = False
-        
+
         btn_w = (panel_w - 40 - 10) // 2
-        # Đặt nút điều hướng ngay trên hàng nút Solve/Reset
         self.prev_btn = Button((bx, by - btn_h - 15, btn_w, btn_h), "← Prev Step", self._step_prev, font_size=14)
         self.next_btn = Button((bx + btn_w + 10, by - btn_h - 15, btn_w, btn_h), "Next Step →", self._step_next, font_size=14, primary=True)
-    
+
+        # --- KB LOG (BC only) ---
+        self.kb_log_scroll = 0       # scroll offset in lines
+        self._kb_log_cache: list = []  # snapshot read from solver
+
     def _step_prev(self):
         if self.is_stepping and self.step_idx > 0:
             self.step_idx -= 1
             self.state.grid = [row[:] for row in self.history_grids[self.step_idx]]
-            self.cell_anim = {} # Xóa hiệu ứng cũ
+            self.cell_anim = {}
 
     def _step_next(self):
         if self.is_stepping and self.step_idx < len(self.history_grids) - 1:
             self.step_idx += 1
             self.state.grid = [row[:] for row in self.history_grids[self.step_idx]]
-            self.cell_anim = {} # Xóa hiệu ứng cũ
+            self.cell_anim = {}
 
     def _compute_board_layout(self):
         N = self.N
@@ -142,7 +149,7 @@ class GameScreen:
         """Instantiate the correct solver. PySAT imported lazily."""
         if self.algo == "Forward chaining":
             return ForwardChainingSolver(self.original_state, stop_event=self.stop_event)
-        elif self.algo == "Forward chaining (TMS)":     
+        elif self.algo == "Forward chaining (TMS)":
             return ForwardChainingTMSSolver(self.original_state, stop_event=self.stop_event)
         elif self.algo == "Backward chaining":
             return BackwardChainingSolver(self.original_state, stop_event=self.stop_event)
@@ -178,7 +185,7 @@ class GameScreen:
             num_initial_clauses = getattr(self.solver, 'num_initial_clauses', None)
             total_number_of_clauses = getattr(self.solver, 'total_number_of_clauses', None)
 
-        if gen == self.solve_gen:   # discard stale result if cancelled
+        if gen == self.solve_gen:
             self.thread_result = {
                 "result": result,
                 "elapsed": elapsed,
@@ -187,7 +194,8 @@ class GameScreen:
                 "num_inferences": inferences,
                 "num_initial_clauses": num_initial_clauses,
                 "total_number_of_clauses": total_number_of_clauses,
-                "history": getattr(self.solver, 'history', [])
+                "history": getattr(self.solver, 'history', []),
+                "kb_log": list(getattr(self.solver, 'kb_log_lines', [])),
             }
 
     def _solve(self):
@@ -200,6 +208,8 @@ class GameScreen:
         self.stop_event = threading.Event()
         self.solve_gen += 1
         self.solver = self._make_solver()
+        self._kb_log_cache = []
+        self.kb_log_scroll = 0
         self.solve_thread = threading.Thread(
             target=self._run_solver_in_background,
             args=(self.solve_gen,), daemon=True
@@ -228,6 +238,8 @@ class GameScreen:
         self.history_grids = []
         self.num_initial_clauses = None
         self.total_number_of_clauses = None
+        self._kb_log_cache = []
+        self.kb_log_scroll = 0
 
     def _save_output(self):
         out_dir = find_outputs_dir()
@@ -299,20 +311,21 @@ class GameScreen:
                 self.dropdown_open = True
                 return
 
-        # Back button always works (calls _cancel_solve internally)
+        # Mouse wheel — scroll KB log
+        if event.type == pygame.MOUSEWHEEL:
+            if self.algo == "Backward chaining" and self._kb_log_cache:
+                self.kb_log_scroll = max(0, self.kb_log_scroll - event.y * 3)
+
         self.back_btn.handle_event(event)
 
         if not self.is_solving:
             self.solve_btn.handle_event(event)
             self.reset_btn.handle_event(event)
             self.menu_btn.handle_event(event)
-            
-            # Kích hoạt 2 nút điều khiển nếu đang ở chế độ stepping
             if getattr(self, 'is_stepping', False):
                 self.prev_btn.handle_event(event)
                 self.next_btn.handle_event(event)
         else:
-            # Allow cancel via reset / menu while solving
             self.reset_btn.handle_event(event)
             self.menu_btn.handle_event(event)
 
@@ -320,7 +333,7 @@ class GameScreen:
         self.title_t = min(1.0, self.title_t + dt * 3)
         for btn in self.buttons:
             btn.update(dt, mouse_pos)
-            
+
         if getattr(self, 'is_stepping', False):
             self.prev_btn.update(dt, mouse_pos)
             self.next_btn.update(dt, mouse_pos)
@@ -336,8 +349,13 @@ class GameScreen:
                 if item_rect.collidepoint(mouse_pos):
                     self.dropdown_hover = i
 
+        # Poll KB log while solving
+        if self.is_solving and self.algo == "Backward chaining" and self.solver:
+            self._kb_log_cache = list(getattr(self.solver, 'kb_log_lines', []))
+            # Auto-scroll to bottom while solving
+            self.kb_log_scroll = max(0, len(self._kb_log_cache) - 1)
+
         if self.is_solving and self.thread_result is not None:
-            # Lấy dữ liệu
             res = self.thread_result["result"]
             self.solve_time     = self.thread_result["elapsed"]
             self.nodes_expanded = self.thread_result["nodes"]
@@ -345,7 +363,8 @@ class GameScreen:
             self.num_inferences = self.thread_result["num_inferences"]
             self.num_initial_clauses = self.thread_result.get("num_initial_clauses", None)
             self.total_number_of_clauses = self.thread_result.get("total_number_of_clauses", None)
-            self.history_grids = self.thread_result.get("history", [])
+            self.history_grids  = self.thread_result.get("history", [])
+            self._kb_log_cache  = self.thread_result.get("kb_log", [])
 
             if res is None:
                 self.status_msg   = "No solution found"
@@ -361,7 +380,6 @@ class GameScreen:
                         if self.original_state.grid[r][c] == 0 and self.state.grid[r][c] != 0:
                             self.cell_anim[(r, c)] = 0.0
 
-            # Kích hoạt chế độ Step-by-step nếu dùng Brute-force
             if self.history_grids and self.algo == "Brute-force backtracking":
                 self.is_stepping = True
                 self.step_idx = len(self.history_grids) - 1
@@ -519,21 +537,16 @@ class GameScreen:
         surface.blit(font_sec.render("STATISTICS", True, th.TEXT_TERTIARY), (rect.x + 22, y))
         y += 20
 
-        bx   = rect.x + 20
-        pw   = rect.w - 40
-        gap  = 8
-        sh   = 58
-        sw2  = (pw - gap) // 2
-        show_inf = self.algo in ("Forward chaining", "Forward chaining (TMS)", "Backward chaining")
+        bx  = rect.x + 20
+        pw  = rect.w - 40
+        gap = 8
+        sh  = 58
+        sw2 = (pw - gap) // 2
 
-        # (Sau dòng vẽ auto_saved hoặc status_msg)
-        
-        # --- VẼ NÚT ĐIỀU HƯỚNG ---
+        # --- VẼ NÚT STEP-BY-STEP ---
         if getattr(self, 'is_stepping', False):
             self.prev_btn.draw(surface)
             self.next_btn.draw(surface)
-            
-            # Text hiển thị tiến độ
             step_text = f"Step: {self.step_idx + 1} / {len(self.history_grids)}"
             if len(self.history_grids) >= getattr(self.solver, 'MAX_HISTORY', 20000):
                 step_text += " (Maxed)"
@@ -551,38 +564,105 @@ class GameScreen:
         nodes_txt = str(self.nodes_expanded) if self.nodes_expanded > 0 else "—"
         mem_txt   = _fmt_memory(self.memory_peak) if self.memory_peak > 0 else "—"
         inf_txt   = str(self.num_inferences) if self.num_inferences is not None else "—"
-
-        time_txt  = f"{self.solve_time * 1000:.1f}ms" if self.solve_time > 0 else "—"
-        nodes_txt = str(self.nodes_expanded) if self.nodes_expanded > 0 else "—"
-        mem_txt   = _fmt_memory(self.memory_peak) if self.memory_peak > 0 else "—"
-        inf_txt   = str(self.num_inferences) if self.num_inferences is not None else "—"
-        
-        # Lấy số steps từ lịch sử (nếu có)
         steps_txt = str(len(getattr(self, 'history_grids', []))) if getattr(self, 'history_grids', []) else "—"
 
         # Row 1: TIME | EXPANDED
-        stat_box(bx,          y, sw2, "TIME", time_txt, th.SUCCESS if self.is_solved else None)
-        stat_box(bx+sw2+gap,  y, sw2, "EXPANDED", nodes_txt)
+        stat_box(bx,         y, sw2, "TIME", time_txt, th.SUCCESS if self.is_solved else None)
+        stat_box(bx+sw2+gap, y, sw2, "EXPANDED", nodes_txt)
         y += sh + gap
 
-        # Row 2: MEMORY | [INFERENCES hoặc STEPS]
+        # Row 2+
         if self.algo in ("Forward chaining", "Forward chaining (TMS)", "Backward chaining"):
             stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
             stat_box(bx+sw2+gap, y, sw2, "INFERENCES", inf_txt)
             y += sh + gap
-            init_cl_txt = str(self.num_initial_clauses) if self.num_initial_clauses is not None else "—"
+            init_cl_txt  = str(self.num_initial_clauses)  if self.num_initial_clauses  is not None else "—"
             total_cl_txt = str(self.total_number_of_clauses) if self.total_number_of_clauses is not None else "—"
-            stat_box(bx,         y, sw2, "INIT CLAUSES", init_cl_txt)
+            stat_box(bx,         y, sw2, "INIT CLAUSES",  init_cl_txt)
             stat_box(bx+sw2+gap, y, sw2, "TOTAL CLAUSES", total_cl_txt)
             y += sh + gap
         elif self.algo == "Brute-force backtracking":
             stat_box(bx,         y, sw2, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
             stat_box(bx+sw2+gap, y, sw2, "STEPS", steps_txt)
+            y += sh + gap
         else:
             # Các thuật toán khác (như PySAT) sẽ để MEMORY tràn viền (full width)
             stat_box(bx, y, pw, "MEMORY", mem_txt, th.INFO if self.memory_peak else None)
-        y += sh + gap
-        # Row 3: INIT CLAUSES | TOTAL CLAUSES (chỉ cho FOL)   
+        # Row 3: INIT CLAUSES | TOTAL CLAUSES (chỉ cho FOL) 
+            y += sh + gap
+
+        # ── KB Log (BC only) ───────────────────────────────────────────────
+        if self.algo == "Backward chaining":
+            self._draw_kb_log(surface, bx, y, pw)
+
+    def _draw_kb_log(self, surface, x: int, y: int, w: int) -> None:
+        """Vẽ hộp log KB có thể cuộn, chỉ hiển thị khi dùng BC."""
+        font_sec = th.get_font(11, bold=True)
+        surface.blit(font_sec.render("KB LOG", True, th.TEXT_TERTIARY), (x, y))
+        y += 16
+
+        log_h = self._KB_LOG_H
+        log_rect = pygame.Rect(x, y, w, log_h)
+
+        # Background
+        pygame.draw.rect(surface, th.BG_TERTIARY, log_rect, border_radius=8)
+        pygame.draw.rect(surface, th.BORDER, log_rect, width=1, border_radius=8)
+
+        lines = self._kb_log_cache
+        if not lines:
+            empty_surf = th.get_font(11).render(
+                "No log yet — press Solve" if not self.is_solving else "Solving...",
+                True, th.TEXT_DISABLED
+            )
+            surface.blit(empty_surf, (x + 10, y + log_h // 2 - empty_surf.get_height() // 2))
+            return
+
+        line_font = th.get_font(10)
+        line_h    = line_font.get_height() + 2
+        visible   = log_h // line_h
+
+        # Clamp scroll
+        max_scroll = max(0, len(lines) - visible)
+        self.kb_log_scroll = min(self.kb_log_scroll, max_scroll)
+
+        # Clip drawing to log_rect
+        old_clip = surface.get_clip()
+        surface.set_clip(log_rect.inflate(-4, -4))
+
+        for i, line in enumerate(lines[self.kb_log_scroll: self.kb_log_scroll + visible]):
+            # Color-code lines
+            if line.startswith("="):
+                color = th.ACCENT
+            elif line.strip().startswith("[") and "]" in line:
+                color = th.MEDIUM
+            elif "ASSERT" in line:
+                color = th.SUCCESS
+            elif "RETRACT" in line:
+                color = th.ERROR
+            elif "Query" in line:
+                color = th.TEXT_PRIMARY
+            elif "Conflict" in line and "=" in line:
+                color = th.WARNING
+            else:
+                color = th.TEXT_SECONDARY
+
+            txt_surf = line_font.render(line, True, color)
+            surface.blit(txt_surf, (x + 6, y + 4 + i * line_h))
+
+        surface.set_clip(old_clip)
+
+        # Scrollbar
+        if len(lines) > visible:
+            sb_x    = x + w - 6
+            sb_h    = log_h - 8
+            thumb_h = max(16, int(sb_h * visible / len(lines)))
+            thumb_y = y + 4 + int((sb_h - thumb_h) * self.kb_log_scroll / max_scroll) if max_scroll else y + 4
+            pygame.draw.rect(surface, th.BORDER, pygame.Rect(sb_x, y + 4, 3, sb_h), border_radius=2)
+            pygame.draw.rect(surface, th.ACCENT_DIM, pygame.Rect(sb_x, thumb_y, 3, thumb_h), border_radius=2)
+
+        # Hint
+        hint = th.get_font(9).render("scroll to navigate", True, th.TEXT_DISABLED)
+        surface.blit(hint, (x + w - hint.get_width() - 8, y + log_h - hint.get_height() - 4))
 
     def _draw_dropdown(self, surface):
         ar   = self.algo_rect
