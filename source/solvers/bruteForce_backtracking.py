@@ -11,7 +11,7 @@ class BruteForceBacktrackingSolver:
         
         # --- CODE MỚI: Thêm mảng lịch sử ---
         self.history = []
-        self.MAX_HISTORY = 2000000  # Giới hạn để tránh tràn RAM với lưới quá lớn
+        self.MAX_HISTORY = 500000000000  # Giới hạn để tránh tràn RAM với lưới quá lớn
 
     def solve(self) -> Optional[State]:
         self.nodes_expanded = 0
