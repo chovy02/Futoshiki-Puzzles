@@ -16,7 +16,6 @@ class ForwardChainingSolver:
         self.elapsed: float = 0.0
         self.kb = build_futoshiki_kb(initial_state)
 
-        # KB log — GUI reads this list to display
         self.kb_log_lines: List[str] = []
 
         self.kb.log_func = self._log
@@ -25,13 +24,12 @@ class ForwardChainingSolver:
         self.kb_log_lines.append(line)
 
     def _log_initial_kb(self) -> None:
-
+        _SKIP = {"Cell", "Less"}
         for name, fact_list in sorted(self.kb.facts.items()):
-            if fact_list:
+            if fact_list and name not in _SKIP: 
                 for f in fact_list:
                     self._log(f"  {f}")
         self._log("")
-
     # KB wrappers
     def _assert_fact(self, fact: Predicate) -> None:
         """Assert fact vào KB và log."""
@@ -81,7 +79,6 @@ class ForwardChainingSolver:
             return None
 
         for v in domain:
-            # FORWARD CHAINING: derive ground facts, check Conflict(r,c,v) emerges?
             query = Predicate("Conflict", [r, c, v])
             has_conflict = self.kb.fol_fc_ask(query)
 
@@ -90,7 +87,6 @@ class ForwardChainingSolver:
                 self._assert_fact(fact)
                 new_state = current_state.assign_value(r, c, v)
 
-                # Forward Checking: prune domain sau khi gán
                 if self._forward_check(new_state):
                     result = self._sld_resolve(new_state)
                     if result is not None:

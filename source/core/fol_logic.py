@@ -119,7 +119,7 @@ class FOLKnowledgeBase:
         return fact_count + rule_count
 
     # =========================================================
-    # BACKWARD CHAINING (giữ nguyên)
+    # BACKWARD CHAINING
     # =========================================================
 
     def fol_bc_ask(self, query: Predicate) -> Generator[Theta, None, None]:
@@ -163,25 +163,10 @@ class FOLKnowledgeBase:
                 yield from self.fol_bc_and(rest, theta_prime)
 
     # =========================================================
-    # FORWARD CHAINING (mới)
+    # FORWARD CHAINING 
     # =========================================================
 
     def fol_fc_ask(self, query: Predicate, max_iter: int = 50) -> bool:
-        """
-        FOL-FC-ASK (AIMA): Suy dẫn tiến.
-        Lặp đi lặp lại: với mỗi rule, tìm các substitution θ thỏa toàn bộ body
-        bằng các fact hiện có trong KB, rồi sinh ra fact mới = SUBST(θ, head).
-        Dừng khi:
-            - Có fact mới khớp (unify được) với query  ->  trả về True
-            - Không còn fact mới nào được sinh ra      ->  trả về False
-
-        Lưu ý: rule phải "range-restricted" - mọi biến trong head phải xuất
-        hiện trong body - thì FC mới sinh được fact ground. Các fact không
-        ground (còn biến) sẽ bị bỏ qua.
-
-        KB được snapshot trước khi chạy và khôi phục sau khi xong, để các
-        fact derive ra trong lần query này không rò rỉ qua lần query kế.
-        """
         # Snapshot facts hiện tại
         snapshot = {k: list(v) for k, v in self.facts.items()}
 
