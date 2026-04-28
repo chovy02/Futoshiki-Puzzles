@@ -5,12 +5,14 @@ import tracemalloc
 from typing import Optional
 
 
+from solvers.forward_chaining import ForwardChainingSolver
 from utils.file_io import read_input_file
 from solvers.backward_chaining import BackwardChainingSolver
 from core.state import State
 from solvers.AStar1Solver import AStar1Solver
 from solvers.AStar2Solver import AStar2Solver
 from solvers.AStar3Solver import AStar3Solver
+from solvers.backward_chaining2 import BackwardChainingSolver2
 
 def run_test(input_path: str) -> None:
     print(f"=== ĐANG CHẠY TEST CASE: {input_path} ===")
@@ -25,7 +27,7 @@ def run_test(input_path: str) -> None:
         return
 
     # 2. Khởi tạo thuật toán Backward Chaining
-    solver = AStar3Solver(initial_state)
+    solver = BackwardChainingSolver2(initial_state)
 
     # 3. Bắt đầu đo lường hiệu năng (Chuẩn bị số liệu cho Báo cáo)
     tracemalloc.start()
@@ -60,7 +62,7 @@ def run_test(input_path: str) -> None:
 if __name__ == "__main__":
     # Đường dẫn tương đối từ file main.py (trong thư mục Source) trỏ ra thư mục Inputs
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-    test_file_01: str = os.path.join(BASE_DIR, "Inputs", "input-45.txt")
+    test_file_01: str = os.path.join(BASE_DIR, "Inputs", "input-30.txt")
     run_test(test_file_01)
     
     # Bạn có thể bỏ comment đoạn dưới đây để chạy một lúc nhiều test case
