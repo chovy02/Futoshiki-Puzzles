@@ -13,9 +13,9 @@ class BaseAStarSolver:
         self.elapsed: float = 0.0
         self.stop_event = stop_event
 
-        # Step-by-step history — mỗi phần tử là snapshot grid tại 1 node được expand
+        # Step-by-step history 
         self.history: List[List[List[int]]] = []
-        self.MAX_HISTORY = 100_000   # A* tốn RAM hơn BruteForce nên giới hạn thấp hơn
+        self.MAX_HISTORY = 100_000   
 
     def calculate_heuristic(self, state: 'State') -> float:
         """Abstract method"""

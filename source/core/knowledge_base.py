@@ -23,14 +23,6 @@ class KnowledgeBase:
         return r, c, v
 
     def generate_base_rules(self) -> None:
-        """
-        Four base rules:
-        1. Every cell has at least one value ∀i∀j ∃v Val(i,j,v)
-        2. Every cell has at most one value ∀i∀j ∀v1 ∀v2 Val(i,j,v1) ∧ Val(i,j,v2) ⇒ v1 = v2
-        3. Row uniqueness ∀i∀j1 ∀j2 ∀v Val(i,j1,v) ∧ Val(i,j2,v) ∧ j1 ̸ = j2 ⇒ ⊥
-        4. Column uniqueness ∀j∀i1 ∀i2 ∀v Val(i1,j,v) ∧ Val(i2,j,v) ∧ i1 ̸ = i2 ⇒ ⊥
-        """ 
-
         N = self.N
 
         # Rule 1: Every cell has at least one value

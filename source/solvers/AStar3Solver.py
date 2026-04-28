@@ -7,8 +7,6 @@ from typing import List, Tuple, Optional
 from collections import deque
 
 class AStar3Solver(BaseAStarSolver):
-    """Calculate number of empty cells"""
-    
     def _get_neighbors(self, N: int, r: int, c: int) -> List[Tuple[int, int]]:
         """Get all cells on the same row and column"""
         neighbors = []

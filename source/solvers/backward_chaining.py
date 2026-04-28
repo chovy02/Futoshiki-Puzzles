@@ -78,12 +78,11 @@ class BackwardChainingSolver:
             return None
 
         for v in new_domain:
-            # Kiểm tra xung đột bằng Backward Chaining
             query = Predicate("Conflict", [r, c, v])
             has_conflict = False
             for _ in self.kb.fol_bc_ask(query):
                 has_conflict = True
-                break  # Phát hiện 1 mâu thuẫn là đủ
+                break 
 
             if not has_conflict:
                 fact = Predicate("Val", [r, c, v])
@@ -95,7 +94,6 @@ class BackwardChainingSolver:
                     if result is not None:
                         return result
 
-                # Rút lui (Backtrack)
                 self._retract_fact("Val", fact)
 
         return None

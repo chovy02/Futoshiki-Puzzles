@@ -1,19 +1,3 @@
-"""
-forward_chaining_tms.py
-───────────────────────
-Forward Chaining Solver với TMS (Truth Maintenance System).
-
-Khác biệt so với forward_chaining.py gốc:
-  - Không dùng snapshot/restore KB sau mỗi fol_fc_ask().
-  - Mỗi fact được suy ra (inferred) được lưu kèm tập parents (justifications)
-    trong Dependency Graph.
-  - Khi backtrack và retract_fact("Val"), hệ thống chỉ xóa đúng những
-    inferred facts phụ thuộc vào Val đó — các inferences hợp lệ từ nhánh
-    khác được giữ lại, tránh tái sinh trùng lặp.
-
-Tất cả file khác (fol_logic.py, futoshiki_kb.py, forward_chaining.py)
-giữ nguyên không thay đổi.
-"""
 
 import time
 from typing import Optional, Dict, Set, List, Tuple, Generator
@@ -28,24 +12,10 @@ from solvers.futoshiki_kb import build_futoshiki_kb, assert_initial_clues
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# TMS – Truth Maintenance System (Dependency Graph)
+# TMS – Truth Maintenance System
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TMSNode:
-    """
-    Một node trong Dependency Graph, đại diện cho một ground fact.
-
-    Attributes
-    ----------
-    pred_key : (name, args_tuple) — identity duy nhất của fact
-    is_base  : True  → fact được assert trực tiếp (clue hoặc Val do solver gán).
-                       Không bao giờ bị cascade-delete.
-               False → fact được suy ra bởi FC.
-                       Bị xóa khi toàn bộ justifications của nó bị mất.
-    parents  : set pred_key mà fact này được suy ra TỪ ĐÓ (justification set).
-    children : set pred_key được suy ra TỪ fact này (dependants).
-               Dùng để cascade deletion nhanh O(children).
-    """
     __slots__ = ("pred_key", "is_base", "parents", "children")
 
     def __init__(self, pred_key: Tuple, is_base: bool,
@@ -57,19 +27,6 @@ class TMSNode:
 
 
 class TMSKnowledgeBase(FOLKnowledgeBase):
-    """
-    Mở rộng FOLKnowledgeBase với Dependency Graph để quản lý
-    vòng đời của các inferred facts.
-
-    Override:
-      - add_fact()     → đăng ký node vào TMS
-      - retract_fact() → cascade delete thay vì pop()
-      - fol_fc_ask()   → không snapshot/restore, dùng TMS
-
-    Giữ nguyên hoàn toàn:
-      - fol_bc_ask(), fol_bc_or(), fol_bc_and() — BC không thay đổi
-      - fetch_rules_for_goal(), count_clauses(), v.v.
-    """
 
     def __init__(self):
         super().__init__()
@@ -81,17 +38,6 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
 
     def add_fact(self, fact: Predicate, is_base: bool = True,
                  parents: Optional[Set[Tuple]] = None) -> None:
-        """
-        Thêm fact vào KB và đăng ký vào TMS.
-
-        Parameters
-        ----------
-        is_base : True  → base fact (clue / Val do solver gán).
-                          Không bị cascade-delete.
-                  False → inferred fact do FC sinh ra.
-                          Bị cascade-delete khi parents bị retract.
-        parents : set pred_key của các facts tạo ra fact này.
-        """
         key = fact.to_key()
 
         if key in self._tms:
@@ -116,13 +62,6 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
             self.log_func(f"+ ASSERT  {fact}")
 
     def retract_fact(self, fact_name: str) -> None:
-        """
-        Retract base fact gần nhất có tên fact_name, sau đó
-        cascade-delete tất cả inferred facts phụ thuộc vào nó.
-
-        Các inferred facts còn ít nhất một parent sống sót
-        (justification khác) sẽ được GIỮ LẠI.
-        """
         candidates = [
             f for f in self.facts.get(fact_name, [])
             if self._tms.get(f.to_key(), TMSNode(f.to_key(), True)).is_base
@@ -132,21 +71,6 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
         self._cascade_delete(candidates[-1].to_key())
 
     def _cascade_delete(self, root_key: Tuple) -> None:
-        """
-        BFS trên Dependency Graph:
-        Xóa root_key và mọi inferred descendant có ít nhất
-        một parent nằm trong tập bị xóa.
-
-        Lý do dùng ANY thay vì ALL:
-        Trong Futoshiki KB, mỗi Conflict fact được derive từ
-        body gồm cả Cell(r,c) (base fact, không bao giờ bị xóa)
-        lẫn Val(r,c,v) (base fact, bị retract khi backtrack).
-        Nếu dùng ALL → Conflict không bao giờ bị cascade vì Cell
-        luôn sống sót → Conflict cũ từ nhánh trước bị giữ lại sai
-        → solver trả False nhầm khi query Conflict(r,c,v) hợp lệ.
-        Dùng ANY: hễ một Val parent bị retract → Conflict bị xóa,
-        đảm bảo KB sạch sau mỗi backtrack.
-        """
         to_delete: Set[Tuple] = set()
         stack = [root_key]
 
@@ -191,15 +115,6 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
     # ── Forward Chaining với TMS ──────────────────────────────────────────
 
     def fol_fc_ask(self, query: Predicate, max_iter: int = 50) -> bool:
-        """
-        FOL-FC-ASK với TMS Dependency Graph.
-
-        Thay vì snapshot/restore toàn bộ KB sau mỗi query, mỗi
-        inferred fact được lưu cùng parents vào TMS. Khi solver
-        backtrack và gọi retract_fact("Val"), chỉ các facts phụ
-        thuộc trực tiếp vào Val đó bị xóa — các inferences hợp lệ
-        từ các Val khác được bảo toàn để tái sử dụng.
-        """
         # Fast path: query đã có trong KB
         self.inference_count += 1
         for fact in self.facts.get(query.name, []):
@@ -253,10 +168,6 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
         theta: Theta,
         used_keys: frozenset,
     ) -> Generator[Tuple[Theta, frozenset], None, None]:
-        """
-        Match body với KB, đồng thời thu thập pred_key của mọi
-        fact được dùng → trở thành parents của head trong TMS.
-        """
         if not body:
             yield theta, used_keys
             return
@@ -277,11 +188,6 @@ class TMSKnowledgeBase(FOLKnowledgeBase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class ForwardChainingTMSSolver:
-    """
-    Forward Chaining Solver dùng TMSKnowledgeBase.
-    Interface giống hệt ForwardChainingSolver — dùng thay thế trực tiếp.
-    """
-
     def __init__(self, initial_state: 'State', stop_event=None) -> None:
         self.initial_state: 'State'       = initial_state
         self.stop_event                   = stop_event
@@ -320,10 +226,6 @@ class ForwardChainingTMSSolver:
 
     # Build KB
     def _build_kb(self, initial_state: 'State') -> TMSKnowledgeBase:
-        """
-        Tái dùng build_futoshiki_kb() để lấy rules/facts,
-        rồi inject vào TMSKnowledgeBase.
-        """
         base_kb = build_futoshiki_kb(initial_state)
 
         tms_kb = TMSKnowledgeBase()

@@ -1,2 +1,3 @@
-pygame
-python-sat
+libraries to be installed using pip:   
+    pygame
+    python-sat
